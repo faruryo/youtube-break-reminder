@@ -60,17 +60,6 @@ function registerInteractionListeners() {
   events.forEach(event => {
     document.addEventListener(event, updateInteraction, { passive: true });
   });
-
-  // 他のウィンドウ（エディタ等）へフォーカスが移った瞬間
-  // 即座に0にするのではなく、10秒の猶予を残す（ポップアップ表示やデバッグ時の猶予用）
-  window.addEventListener('blur', () => {
-    lastInteractionTime = Date.now() - 50 * 1000; // あと10秒でタイムアウト(60秒)する時間にする
-  });
-
-  // YouTubeウィンドウへ戻ってきたら操作ありにする
-  window.addEventListener('focus', () => {
-    lastInteractionTime = Date.now();
-  });
 }
 
 // デバッグパネルの作成とリアルタイム更新

@@ -128,10 +128,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // タイムアウトによるリセットを確認
         let continuousSeconds = await checkAndResetContinuous();
         
-        const data = await chrome.storage.local.get(['todaySeconds', 'limitSeconds']);
-        const todaySeconds = (data.todaySeconds || 0) + 1; // 1秒加算
-        continuousSeconds += 1;
+        const data = await chrome.storage.local.get(['todaySeconds', 'limitSeconds', 'lastHeartbeatTime']);
+        const lastHeartbeatTime = data.lastHeartbeatTime || 0;
         const limitSeconds = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
+        
+        let secondsToAdd = 1; // 基本は1秒加算
+        
+        if (lastHeartbeatTime > 0) {
+          const diff = now - lastHeartbeatTime;
+          if (diff > 1500) { // 1.5秒以上の間隔が空いた場合（別タブ移動や放置）
+            if (diff < 60 * 1000) {
+              // 60秒未満の離脱であれば、その間の実時間（秒）をすべて上乗せ加算（往来時の引き継ぎ）
+              secondsToAdd = Math.floor(diff / 1000);
+            } else {
+              // 60秒以上の離脱であれば、猶予期間の「60秒」だけを加算し、あとは停止していたとみなす
+              secondsToAdd = 60;
+            }
+          }
+        }
+        
+        const todaySeconds = (data.todaySeconds || 0) + secondsToAdd;
+        continuousSeconds += secondsToAdd;
         
         await chrome.storage.local.set({ 
           todaySeconds,
