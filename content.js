@@ -101,8 +101,8 @@ function updateDebugPanel(isVisible, playing, recentInteraction, isActive) {
 function isVideoPlaying() {
   const videos = document.querySelectorAll('video');
   for (const video of videos) {
-    // 実際に画面上に存在し（サイズが0より大きい）、一時停止されておらず、終了していないもの
-    if (!video.paused && !video.ended && video.offsetWidth > 0 && video.offsetHeight > 0) {
+    // 一時停止されておらず、終了していないビデオがあれば再生中とみなす
+    if (!video.paused && !video.ended) {
       return true;
     }
   }
