@@ -84,6 +84,23 @@ async function checkAndResetDate() {
   return false;
 }
 
+// 連続利用時間のタイムアウト判定とリセットを行うヘルパー関数
+async function checkAndResetContinuous() {
+  const now = Date.now();
+  const data = await chrome.storage.local.get(['continuousSeconds', 'lastHeartbeatTime']);
+  const lastHeartbeatTime = data.lastHeartbeatTime || 0;
+  
+  // 最後のハートビートから60秒以上空いていたら、連続視聴時間をリセット
+  if (lastHeartbeatTime > 0 && (now - lastHeartbeatTime > 60 * 1000)) {
+    await chrome.storage.local.set({
+      continuousSeconds: 0,
+      lastHeartbeatTime: 0
+    });
+    return 0;
+  }
+  return data.continuousSeconds || 0;
+}
+
 // メッセージハンドラ
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'HEARTBEAT') {
@@ -92,16 +109,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await checkAndResetDate();
         
         const now = Date.now();
-        const data = await chrome.storage.local.get(['todaySeconds', 'limitSeconds', 'continuousSeconds', 'lastHeartbeatTime']);
+        // タイムアウトによるリセットを確認
+        let continuousSeconds = await checkAndResetContinuous();
         
-        let continuousSeconds = data.continuousSeconds || 0;
-        const lastHeartbeatTime = data.lastHeartbeatTime || 0;
-        
-        // 最後のハートビートから60秒以上空いていたら、離席したとみなして連続視聴をリセット
-        if (lastHeartbeatTime > 0 && (now - lastHeartbeatTime > 60 * 1000)) {
-          continuousSeconds = 0;
-        }
-        
+        const data = await chrome.storage.local.get(['todaySeconds', 'limitSeconds']);
         const todaySeconds = (data.todaySeconds || 0) + 1; // 1秒加算
         continuousSeconds += 1;
         const limitSeconds = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
@@ -127,12 +138,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       try {
         await checkAndResetDate();
-        const data = await chrome.storage.local.get(['todaySeconds', 'limitSeconds', 'breakIntervalSeconds', 'continuousSeconds']);
+        // ポップアップを開いた際にもタイムアウトを即座に反映させる
+        const continuousSeconds = await checkAndResetContinuous();
+        
+        const data = await chrome.storage.local.get(['todaySeconds', 'limitSeconds', 'breakIntervalSeconds']);
         sendResponse({
           todaySeconds: data.todaySeconds || 0,
           limitSeconds: data.limitSeconds || DEFAULT_LIMIT_SECONDS,
           breakIntervalSeconds: data.breakIntervalSeconds || DEFAULT_BREAK_SECONDS,
-          continuousSeconds: data.continuousSeconds || 0
+          continuousSeconds: continuousSeconds
         });
       } catch (err) {
         sendResponse({ error: err.message });
@@ -144,7 +158,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'RESET_CONTINUOUS') {
     (async () => {
       try {
-        await chrome.storage.local.set({ continuousSeconds: 0 });
+        await chrome.storage.local.set({ 
+          continuousSeconds: 0,
+          lastHeartbeatTime: 0
+        });
         sendResponse({ success: true });
       } catch (err) {
         sendResponse({ success: false, error: err.message });
