@@ -61,15 +61,40 @@ function registerInteractionListeners() {
     document.addEventListener(event, updateInteraction, { passive: true });
   });
 
-  // 他のウィンドウ（エディタ等）へフォーカスが移った瞬間、無操作状態（放置）にする
+  // 他のウィンドウ（エディタ等）へフォーカスが移った瞬間
+  // 即座に0にするのではなく、10秒の猶予を残す（ポップアップ表示やデバッグ時の猶予用）
   window.addEventListener('blur', () => {
-    lastInteractionTime = 0;
+    lastInteractionTime = Date.now() - 50 * 1000; // あと10秒でタイムアウト(60秒)する時間にする
   });
 
   // YouTubeウィンドウへ戻ってきたら操作ありにする
   window.addEventListener('focus', () => {
     lastInteractionTime = Date.now();
   });
+}
+
+// デバッグパネルの作成とリアルタイム更新
+function updateDebugPanel(isVisible, playing, recentInteraction, isActive) {
+  let panel = document.getElementById('ybr-debug-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'ybr-debug-panel';
+    // 画面左下に半透明のコンパクトなデバッグ情報を表示
+    panel.style.cssText = 'position: fixed; bottom: 10px; left: 10px; background: rgba(15, 15, 15, 0.85); color: #00ff00; padding: 10px 14px; font-family: monospace; font-size: 11px; z-index: 2147483646; border-radius: 8px; pointer-events: none; line-height: 1.5; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 12px rgba(0,0,0,0.5);';
+    document.body.appendChild(panel);
+  }
+  
+  const idleDiff = Date.now() - lastInteractionTime;
+  const idleText = lastInteractionTime === 0 ? 'Timeout' : `${Math.round(idleDiff / 1000)}s / 60s`;
+  
+  panel.innerHTML = `
+    <div style="font-weight:bold;margin-bottom:4px;color:#ff0000;font-family:sans-serif;">☕ YBR DEBUG</div>
+    Active: <span style="color:${isActive ? '#00ff00' : '#ff4e50'}">${isActive ? 'TRUE' : 'FALSE'}</span><br>
+    Visible: ${isVisible}<br>
+    Playing: ${playing}<br>
+    RecentInteract: ${recentInteraction}<br>
+    Idle Time: ${idleText}
+  `;
 }
 
 // YouTubeで動画が再生中であるか確認
@@ -112,6 +137,9 @@ function startHeartbeat() {
     const recentInteraction = (Date.now() - lastInteractionTime) < 60000; // 60秒の操作バッファ
     
     const isActive = isVisible && (playing || recentInteraction);
+    
+    // デバッグ表示の更新
+    updateDebugPanel(isVisible, playing, recentInteraction, isActive);
     
     if (isActive && !isBlocked && !isBreakShowing) {
       continuousSeconds++;
