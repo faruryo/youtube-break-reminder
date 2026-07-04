@@ -1,0 +1,228 @@
+/* YouTube Break Reminder Popup Styles (Minimal Dark Theme) */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
+
+:root {
+  --bg-primary: #0f0f0f;      /* YouTube公式のダークモードに近い黒 */
+  --bg-secondary: #1f1f1f;    /* カードの背景 */
+  --border-color: #272727;    /* 境界線 */
+  --text-primary: #f1f1f1;    /* 主要テキスト */
+  --text-secondary: #aaaaaa;  /* サブテキスト */
+  --accent-color: #ff0000;    /* YouTube Red */
+  --input-bg: #121212;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  width: 320px;
+  background-color: var(--bg-primary);
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--text-primary);
+  overflow-x: hidden;
+}
+
+.container {
+  padding: 20px;
+}
+
+header {
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.logo-area {
+  display: flex;
+  align-items: center;
+}
+
+header h1 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.2px;
+}
+
+/* 統計カード */
+.stats-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.progress-container {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin-bottom: 16px;
+}
+
+.progress-ring {
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+}
+
+.progress-ring__circle {
+  transition: stroke-dashoffset 0.35s;
+  transform-origin: 50% 50%;
+}
+
+.progress-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+#current-time {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+.progress-text .label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 1px;
+}
+
+.time-details {
+  width: 100%;
+  border-top: 1px solid var(--border-color);
+  padding-top: 12px;
+  text-align: center;
+}
+
+.time-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.time-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.time-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: #ff9900; /* 残り時間は温かみのあるオレンジ */
+}
+
+/* 設定カード */
+.settings-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.settings-card h2 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--text-primary);
+  border-left: 2px solid var(--accent-color);
+  padding-left: 8px;
+  letter-spacing: -0.1px;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.input-row input {
+  width: 60px;
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 6px;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.input-row input:focus {
+  border-color: #606060;
+}
+
+.input-row input::-webkit-outer-spin-button,
+.input-row input::-webkit-inner-spin-button {
+  margin: 0;
+}
+
+.input-row span {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+/* 保存ボタン (グラデーションを排除したミニマルソリッドデザイン) */
+.save-btn {
+  width: 100%;
+  padding: 10px;
+  background: #ffffff;
+  color: #0f0f0f;
+  border: none;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  margin-top: 8px;
+}
+
+.save-btn:hover {
+  background: #e5e5e5;
+}
+
+.save-btn:active {
+  background: #cccccc;
+}
+
+.save-status {
+  text-align: center;
+  font-size: 11px;
+  color: #2ba640; /* 落ち着いた緑 */
+  margin-top: 10px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.save-status.show {
+  opacity: 1;
+}

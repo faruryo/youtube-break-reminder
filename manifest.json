@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Break Reminder",
+  "version": "1.0.0",
+  "description": "YouTubeの利用時間を管理し、長時間の視聴やブラウジングを防ぐための拡張機能です。1日の制限時間の超過防止や、定期的な休憩を促します。",
+  "permissions": [
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "*://*.youtube.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

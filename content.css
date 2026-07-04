@@ -1,0 +1,127 @@
+/* YouTube Break Reminder Content Script Overlay Styles */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap');
+
+#yt-break-reminder-block-overlay,
+#yt-break-reminder-break-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 15, 15, 0.85); /* ダークな背景 */
+  backdrop-filter: blur(20px); /* 綺麗なぼかし（グラスモルフィズム） */
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 2147483647; /* 最前面に配置（全画面表示の動画やUIをも超える） */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #f1f1f1;
+  animation: ybr-fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* フェードインアニメーション */
+@keyframes ybr-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.ybr-card {
+  background: rgba(30, 30, 30, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 48px;
+  width: 90%;
+  max-width: 480px;
+  text-align: center;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4),
+              inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  animation: ybr-scale-up 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes ybr-scale-up {
+  from {
+    transform: scale(0.9) translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+.ybr-icon {
+  font-size: 64px;
+  margin-bottom: 24px;
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.2));
+  animation: ybr-bounce 3s ease-in-out infinite;
+}
+
+@keyframes ybr-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.ybr-card h1 {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0 0 16px 0;
+  background: linear-gradient(135deg, #ffffff 0%, #a5a5a5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.ybr-card p {
+  font-size: 16px;
+  line-height: 1.6;
+  color: #cccccc;
+  margin: 0 0 12px 0;
+}
+
+.ybr-card .ybr-subtext {
+  font-size: 14px;
+  color: #888888;
+  margin-top: 16px;
+  margin-bottom: 0;
+}
+
+/* 休憩解除用のボタン */
+#ybr-resume-btn {
+  margin-top: 32px;
+  padding: 14px 28px;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 14px;
+  border: none;
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.1);
+  color: #777777;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  width: 100%;
+}
+
+#ybr-resume-btn.active {
+  cursor: pointer;
+  background: linear-gradient(135deg, #ff4e50 0%, #f9d423 100%); /* 美しいグラデーション */
+  color: #0f0f0f;
+  box-shadow: 0 4px 15px rgba(255, 78, 80, 0.3);
+}
+
+#ybr-resume-btn.active:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 78, 80, 0.5);
+}
+
+#ybr-resume-btn.active:active {
+  transform: translateY(0);
+}

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Break Reminder</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo-area">
+        <h1>YouTube Break Reminder</h1>
+      </div>
+    </header>
+
+    <!-- 進捗エリア -->
+    <main>
+      <div class="stats-card">
+        <div class="progress-container">
+          <svg class="progress-ring" width="120" height="120">
+            <circle class="progress-ring__circle-bg" stroke="rgba(255,255,255,0.05)" stroke-width="6" fill="transparent" r="50" cx="60" cy="60"/>
+            <circle class="progress-ring__circle" stroke="#ff0000" stroke-width="6" stroke-linecap="round" fill="transparent" r="50" cx="60" cy="60"/>
+          </svg>
+          <div class="progress-text">
+            <span id="current-time">0m</span>
+            <span class="label">利用時間</span>
+          </div>
+        </div>
+
+        <div class="time-details">
+          <div class="time-item">
+            <span class="time-label">今日の残り時間</span>
+            <span id="remaining-time" class="time-value">--s</span>
+          </div>
+          <div class="time-item" style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-color);">
+            <span class="time-label">現在の連続利用時間</span>
+            <span id="continuous-time" class="time-value" style="color: #64b5f6;">--s</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 設定エリア -->
+      <div class="settings-card">
+        <h2>設定</h2>
+        
+        <div class="form-group">
+          <label for="limit-hours">1日の制限時間</label>
+          <div class="input-row">
+            <input type="number" id="limit-hours" min="0" max="23" value="1">
+            <span>時間</span>
+            <input type="number" id="limit-minutes" min="0" max="59" value="30">
+            <span>分</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="break-interval">連続利用の休憩間隔</label>
+          <div class="input-row">
+            <input type="number" id="break-interval" min="5" max="180" value="30">
+            <span>分ごと</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="reset-hour">リセット時刻 (24時間表記)</label>
+          <div class="input-row">
+            <input type="number" id="reset-hour" min="0" max="23" value="4">
+            <span>時</span>
+          </div>
+        </div>
+
+        <button id="save-btn" class="save-btn">設定を保存</button>
+        <div id="save-status" class="save-status">設定を保存しました</div>
+      </div>
+    </main>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
