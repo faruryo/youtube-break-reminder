@@ -95,15 +95,13 @@ function startHeartbeat() {
     // アクティブ判定の拡張:
     // 1. タブが表示されている (visibilityState === 'visible')
     // 2. かつ、以下のいずれかを満たしている：
-    //    - ドキュメントにフォーカスがある (document.hasFocus())
-    //    - 最近（15秒以内）にスクロールやキー入力などのユーザー操作があった
-    //    - 動画が実際に再生中である
+    //    - 動画が実際に再生中である（じっと見ている時間）
+    //    - 直近1分（60秒）以内に何かしらの操作（スクロールやクリックなど）があった（探索している時間）
     const isVisible = document.visibilityState === 'visible';
-    const hasFocus = document.hasFocus();
-    const recentInteraction = (Date.now() - lastInteractionTime) < 15000;
     const playing = isVideoPlaying();
+    const recentInteraction = (Date.now() - lastInteractionTime) < 60000; // 60秒の操作バッファ
     
-    const isActive = isVisible && (hasFocus || recentInteraction || playing);
+    const isActive = isVisible && (playing || recentInteraction);
     
     if (isActive && !isBlocked && !isBreakShowing) {
       continuousSeconds++;
