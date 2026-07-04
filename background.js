@@ -52,7 +52,6 @@ async function updateBadge(todaySeconds, limitSeconds) {
     const remainingMinutes = Math.ceil(remaining / 60);
     if (remainingMinutes >= 60) {
       const hours = Math.floor(remainingMinutes / 60);
-      const mins = remainingMinutes % 60;
       await chrome.action.setBadgeText({ text: `${hours}h` });
     } else {
       await chrome.action.setBadgeText({ text: `${remainingMinutes}m` });
