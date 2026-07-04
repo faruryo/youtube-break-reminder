@@ -89,8 +89,8 @@ async function checkAndResetContinuous() {
   const data = await chrome.storage.local.get(['continuousSeconds', 'lastHeartbeatTime']);
   const lastHeartbeatTime = data.lastHeartbeatTime || 0;
   
-  // 最後のハートビートから60秒以上空いていたら、連続視聴時間をリセット
-  if (lastHeartbeatTime > 0 && (now - lastHeartbeatTime > 60 * 1000)) {
+  // 最後のハートビートから5分（300秒）以上空いていたら、連続視聴時間をリセット
+  if (lastHeartbeatTime > 0 && (now - lastHeartbeatTime > 300 * 1000)) {
     await chrome.storage.local.set({
       continuousSeconds: 0,
       lastHeartbeatTime: 0

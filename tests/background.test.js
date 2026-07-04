@@ -69,9 +69,9 @@ describe('YouTube Break Reminder - background.js Tests', () => {
   });
 
   describe('checkAndResetContinuous() - Idle Reset Logic', () => {
-    it('should NOT reset continuous seconds if last heartbeat was within 60 seconds', async () => {
+    it('should NOT reset continuous seconds if last heartbeat was within 300 seconds', async () => {
       const now = Date.now();
-      const lastHeartbeatTime = now - 30 * 1000; // 30秒前
+      const lastHeartbeatTime = now - 290 * 1000; // 290秒前 (300秒未満)
 
       chrome.storage.local.get.mockResolvedValue({
         continuousSeconds: 600, // 10分
@@ -86,9 +86,9 @@ describe('YouTube Break Reminder - background.js Tests', () => {
       expect(chrome.storage.local.set).not.toHaveBeenCalled();
     });
 
-    it('should reset continuous seconds to 0 if last heartbeat was more than 60 seconds ago', async () => {
+    it('should reset continuous seconds to 0 if last heartbeat was more than 300 seconds ago', async () => {
       const now = Date.now();
-      const lastHeartbeatTime = now - 70 * 1000; // 70秒前 (60秒超)
+      const lastHeartbeatTime = now - 310 * 1000; // 310秒前 (300秒超)
 
       chrome.storage.local.get.mockResolvedValue({
         continuousSeconds: 600, // 10分
