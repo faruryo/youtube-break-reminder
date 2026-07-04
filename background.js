@@ -180,6 +180,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: false, error: err.message });
       }
     })();
-    return true;
   }
 });
+
+if (typeof module !== 'undefined') {
+  module.exports = {
+    getBusinessDateString,
+    checkAndResetDate,
+    checkAndResetContinuous,
+    DEFAULT_LIMIT_SECONDS,
+    DEFAULT_BREAK_SECONDS
+  };
+}

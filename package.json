@@ -1,0 +1,12 @@
+{
+  "name": "youtube-break-reminder",
+  "version": "1.0.0",
+  "description": "YouTube Break Reminder Chrome Extension",
+  "main": "background.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
