@@ -100,6 +100,8 @@ async function checkAndResetContinuous() {
   return data.continuousSeconds || 0;
 }
 
+let lastIncrementTime = 0;
+
 // メッセージハンドラ
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'HEARTBEAT') {
@@ -108,6 +110,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await checkAndResetDate();
         
         const now = Date.now();
+        
+        // 950ms未満の重複したハートビート（複数ウィンドウが並んでいる場合など）は無視して、現在の状態を返す
+        if (lastIncrementTime > 0 && (now - lastIncrementTime < 950)) {
+          const data = await chrome.storage.local.get(['todaySeconds', 'limitSeconds', 'continuousSeconds']);
+          const todaySeconds = data.todaySeconds || 0;
+          const limitSeconds = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
+          const continuousSeconds = data.continuousSeconds || 0;
+          const limitExceeded = todaySeconds >= limitSeconds;
+          
+          sendResponse({ success: true, todaySeconds, continuousSeconds, limitExceeded });
+          return;
+        }
+        
+        lastIncrementTime = now;
+        
         // タイムアウトによるリセットを確認
         let continuousSeconds = await checkAndResetContinuous();
         

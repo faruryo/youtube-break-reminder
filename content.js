@@ -60,6 +60,16 @@ function registerInteractionListeners() {
   events.forEach(event => {
     document.addEventListener(event, updateInteraction, { passive: true });
   });
+
+  // 他のウィンドウ（エディタ等）へフォーカスが移った瞬間、無操作状態（放置）にする
+  window.addEventListener('blur', () => {
+    lastInteractionTime = 0;
+  });
+
+  // YouTubeウィンドウへ戻ってきたら操作ありにする
+  window.addEventListener('focus', () => {
+    lastInteractionTime = Date.now();
+  });
 }
 
 // YouTubeで動画が再生中であるか確認
