@@ -357,4 +357,8 @@ function observeOverlayRemoval(elementId) {
 }
 
 // 実行開始
-init();
+if (window.location.hostname === 'music.youtube.com') {
+  // YouTube Musicは測定対象外にするため、初期化処理を行わない
+} else {
+  init();
+}
