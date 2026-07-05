@@ -1,4 +1,5 @@
-const DEFAULT_LIMIT_SECONDS = 90 * 60; // デフォルト1.5時間
+const DEFAULT_LIMIT_SECONDS = 90 * 60; // デフォルト1.5時間 (平日)
+const DEFAULT_LIMIT_SECONDS_WEEKEND = 3 * 3600; // デフォルト3時間 (土日・祝日)
 const DEFAULT_BREAK_SECONDS = 30 * 60; // デフォルト30分
 
 // 日本の祝日（祝日法に基づくもの）を生成する関数
@@ -142,7 +143,15 @@ async function getActiveLimit() {
   const businessDate = getBusinessDate(resetHour);
   const key = getActiveLimitKey(businessDate);
   
-  return data[key] !== undefined ? data[key] : DEFAULT_LIMIT_SECONDS;
+  if (data[key] !== undefined) {
+    return data[key];
+  }
+  
+  // フォールバックデフォルト値
+  if (key === 'limitSeconds_0' || key === 'limitSeconds_6' || key === 'limitSeconds_H') {
+    return DEFAULT_LIMIT_SECONDS_WEEKEND;
+  }
+  return DEFAULT_LIMIT_SECONDS;
 }
 
 // インストール時に初期設定を保存
@@ -158,15 +167,23 @@ chrome.runtime.onInstalled.addListener(async () => {
   const updates = {};
   
   // 旧設定からのマイグレーション
-  const baseLimit = data.limitSeconds !== undefined ? data.limitSeconds : DEFAULT_LIMIT_SECONDS;
+  const baseLimit = data.limitSeconds;
   
   for (let i = 0; i <= 6; i++) {
     if (data[`limitSeconds_${i}`] === undefined) {
-      updates[`limitSeconds_${i}`] = baseLimit;
+      if (baseLimit !== undefined) {
+        updates[`limitSeconds_${i}`] = baseLimit;
+      } else {
+        updates[`limitSeconds_${i}`] = (i === 0 || i === 6) ? DEFAULT_LIMIT_SECONDS_WEEKEND : DEFAULT_LIMIT_SECONDS;
+      }
     }
   }
   if (data['limitSeconds_H'] === undefined) {
-    updates['limitSeconds_H'] = baseLimit;
+    if (baseLimit !== undefined) {
+      updates['limitSeconds_H'] = baseLimit;
+    } else {
+      updates['limitSeconds_H'] = DEFAULT_LIMIT_SECONDS_WEEKEND;
+    }
   }
   
   if (data.breakIntervalSeconds === undefined) updates.breakIntervalSeconds = DEFAULT_BREAK_SECONDS;
@@ -373,6 +390,7 @@ if (typeof module !== 'undefined') {
     checkAndResetDate,
     checkAndResetContinuous,
     DEFAULT_LIMIT_SECONDS,
+    DEFAULT_LIMIT_SECONDS_WEEKEND,
     DEFAULT_BREAK_SECONDS,
     getBusinessDate,
     isHolidayOrWeekend,

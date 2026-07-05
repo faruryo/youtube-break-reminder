@@ -226,5 +226,41 @@ describe('YouTube Break Reminder - background.js Tests', () => {
       const limit = await background.getActiveLimit();
       expect(limit).toBe(7200);
     });
+
+    it('should return default weekday limit (1.5h) on a weekday if no setting is saved', async () => {
+      chrome.storage.local.get.mockResolvedValue({
+        resetHour: 4
+      });
+      jest.setSystemTime(new Date('2026-07-06T12:00:00+09:00')); // Monday
+      const limit = await background.getActiveLimit();
+      expect(limit).toBe(90 * 60); // 1.5h
+    });
+
+    it('should return default weekend limit (3h) on Saturday if no setting is saved', async () => {
+      chrome.storage.local.get.mockResolvedValue({
+        resetHour: 4
+      });
+      jest.setSystemTime(new Date('2026-07-11T12:00:00+09:00')); // Saturday
+      const limit = await background.getActiveLimit();
+      expect(limit).toBe(3 * 3600); // 3h
+    });
+
+    it('should return default weekend limit (3h) on Sunday if no setting is saved', async () => {
+      chrome.storage.local.get.mockResolvedValue({
+        resetHour: 4
+      });
+      jest.setSystemTime(new Date('2026-07-12T12:00:00+09:00')); // Sunday
+      const limit = await background.getActiveLimit();
+      expect(limit).toBe(3 * 3600); // 3h
+    });
+
+    it('should return default weekend limit (3h) on Holiday if no setting is saved', async () => {
+      chrome.storage.local.get.mockResolvedValue({
+        resetHour: 4
+      });
+      jest.setSystemTime(new Date('2026-01-01T12:00:00+09:00')); // New Year's Day
+      const limit = await background.getActiveLimit();
+      expect(limit).toBe(3 * 3600); // 3h
+    });
   });
 });
