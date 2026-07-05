@@ -1,12 +1,174 @@
 const DEFAULT_LIMIT_SECONDS = 90 * 60; // デフォルト1.5時間
 const DEFAULT_BREAK_SECONDS = 30 * 60; // デフォルト30分
 
+// 日本の祝日（祝日法に基づくもの）を生成する関数
+function getHolidays(year) {
+  const holidays = new Map();
+  
+  const add = (month, day) => {
+    holidays.set(`${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, true);
+  };
+  
+  const getNthMonday = (month, n) => {
+    const firstDay = new Date(year, month - 1, 1).getDay(); // 0: 日, 1: 月, ...
+    const daysToFirstMonday = (1 - firstDay + 7) % 7;
+    return 1 + daysToFirstMonday + (n - 1) * 7;
+  };
+  
+  // 固定祝日
+  add(1, 1);   // 元日
+  add(2, 11);  // 建国記念の日
+  add(2, 23);  // 天皇誕生日
+  add(4, 29);  // 昭和の日
+  add(5, 3);   // 憲法記念日
+  add(5, 4);   // みどりの日
+  add(5, 5);   // こどもの日
+  add(8, 11);  // 山の日
+  add(11, 3);  // 文化の日
+  add(11, 23); // 勤労感謝の日
+  
+  // ハッピーマンデー
+  add(1, getNthMonday(1, 2));  // 成人の日 (第2月曜)
+  add(7, getNthMonday(7, 3));  // 海の日 (第3月曜)
+  add(9, getNthMonday(9, 3));  // 敬老の日 (第3月曜)
+  add(10, getNthMonday(10, 2)); // スポーツの日 (第2月曜)
+  
+  // 春分の日・秋分の日の簡易計算式 (2000〜2099年に対応)
+  const vernalDay = Math.floor(20.8431 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
+  add(3, vernalDay);
+  
+  const autumnalDay = Math.floor(23.2488 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
+  add(9, autumnalDay);
+  
+  return holidays;
+}
+
+// 特定の日付が祝日（振替休日・国民の休日を含む）かどうか判定
+function isHoliday(date) {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  
+  const baseHolidays = getHolidays(year);
+  const key = `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  
+  // 国民の祝日に該当する場合
+  if (baseHolidays.has(key)) {
+    return true;
+  }
+  
+  // 振替休日の判定
+  // 祝日が日曜日に当たるときは、その翌日以降の「祝日でない日」の最初の日を休日とする
+  let checkDate = new Date(date);
+  while (true) {
+    checkDate.setDate(checkDate.getDate() - 1);
+    const checkYear = checkDate.getFullYear();
+    const checkMonth = checkDate.getMonth() + 1;
+    const checkDay = checkDate.getDate();
+    const checkKey = `${String(checkMonth).padStart(2, '0')}-${String(checkDay).padStart(2, '0')}`;
+    const checkBaseHolidays = getHolidays(checkYear);
+    
+    if (checkBaseHolidays.has(checkKey)) {
+      if (checkDate.getDay() === 0) { // 日曜日が祝日だった！
+        return true;
+      }
+    } else {
+      break;
+    }
+  }
+  
+  // 国民の休日の判定
+  // 前日と翌日の両方が「国民の祝日」である平日は休日とする
+  const prevDate = new Date(date);
+  prevDate.setDate(prevDate.getDate() - 1);
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + 1);
+  
+  const prevKey = `${String(prevDate.getMonth() + 1).padStart(2, '0')}-${String(prevDate.getDate()).padStart(2, '0')}`;
+  const nextKey = `${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`;
+  
+  const prevHolidays = getHolidays(prevDate.getFullYear());
+  const nextHolidays = getHolidays(nextDate.getFullYear());
+  
+  if (prevHolidays.has(prevKey) && nextHolidays.has(nextKey)) {
+    return true;
+  }
+  
+  return false;
+}
+
+// 土曜日、日曜日、または祝日であるか判定
+function isHolidayOrWeekend(date) {
+  const day = date.getDay();
+  if (day === 0 || day === 6) {
+    return true;
+  }
+  return isHoliday(date);
+}
+
+// 日付に応じた設定キーを取得
+function getActiveLimitKey(date) {
+  if (isHoliday(date)) {
+    return 'limitSeconds_H';
+  }
+  return `limitSeconds_${date.getDay()}`;
+}
+
+// 基準時刻を考慮したDateオブジェクトを取得
+function getBusinessDate(resetHour = 4) {
+  const d = new Date();
+  const currentHour = d.getHours();
+  
+  if (currentHour < resetHour) {
+    d.setDate(d.getDate() - 1);
+  }
+  return d;
+}
+
+// リセット時刻を考慮した基準日の日付文字列を取得 (YYYY-MM-DD)
+function getBusinessDateString(resetHour = 4) {
+  const d = getBusinessDate(resetHour);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const date = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${date}`;
+}
+
+// 現在適用されるべき制限時間を取得
+async function getActiveLimit() {
+  const data = await chrome.storage.local.get(['limitSeconds_H', 'limitSeconds_0', 'limitSeconds_1', 'limitSeconds_2', 'limitSeconds_3', 'limitSeconds_4', 'limitSeconds_5', 'limitSeconds_6', 'resetHour']);
+  const resetHour = data.resetHour !== undefined ? data.resetHour : 4;
+  
+  const businessDate = getBusinessDate(resetHour);
+  const key = getActiveLimitKey(businessDate);
+  
+  return data[key] !== undefined ? data[key] : DEFAULT_LIMIT_SECONDS;
+}
+
 // インストール時に初期設定を保存
 chrome.runtime.onInstalled.addListener(async () => {
-  const data = await chrome.storage.local.get(['limitSeconds', 'breakIntervalSeconds', 'todaySeconds', 'lastActiveDate', 'continuousSeconds', 'lastHeartbeatTime', 'resetHour', 'isDebugEnabled']);
+  const keys = ['limitSeconds', 'breakIntervalSeconds', 'todaySeconds', 'lastActiveDate', 'continuousSeconds', 'lastHeartbeatTime', 'resetHour', 'isDebugEnabled'];
+  for (let i = 0; i <= 6; i++) {
+    keys.push(`limitSeconds_${i}`);
+  }
+  keys.push('limitSeconds_H');
+  
+  const data = await chrome.storage.local.get(keys);
   
   const updates = {};
-  if (data.limitSeconds === undefined) updates.limitSeconds = DEFAULT_LIMIT_SECONDS;
+  
+  // 旧設定からのマイグレーション
+  const baseLimit = data.limitSeconds !== undefined ? data.limitSeconds : DEFAULT_LIMIT_SECONDS;
+  
+  for (let i = 0; i <= 6; i++) {
+    if (data[`limitSeconds_${i}`] === undefined) {
+      updates[`limitSeconds_${i}`] = baseLimit;
+    }
+  }
+  if (data['limitSeconds_H'] === undefined) {
+    updates['limitSeconds_H'] = baseLimit;
+  }
+  
   if (data.breakIntervalSeconds === undefined) updates.breakIntervalSeconds = DEFAULT_BREAK_SECONDS;
   if (data.todaySeconds === undefined) updates.todaySeconds = 0;
   if (data.continuousSeconds === undefined) updates.continuousSeconds = 0;
@@ -22,26 +184,12 @@ chrome.runtime.onInstalled.addListener(async () => {
     await chrome.storage.local.set(updates);
   }
   
+  const activeLimit = await getActiveLimit();
+  await chrome.storage.local.set({ limitSeconds: activeLimit });
+  
   const finalToday = updates.todaySeconds !== undefined ? updates.todaySeconds : (data.todaySeconds || 0);
-  const finalLimit = updates.limitSeconds !== undefined ? updates.limitSeconds : (data.limitSeconds || DEFAULT_LIMIT_SECONDS);
-  await updateBadge(finalToday, finalLimit);
+  await updateBadge(finalToday, activeLimit);
 });
-
-// リセット時刻を考慮した基準日の日付文字列を取得 (YYYY-MM-DD)
-function getBusinessDateString(resetHour = 4) {
-  const d = new Date();
-  const currentHour = d.getHours();
-  
-  // 現在時刻が設定されたリセット時刻未満なら、カレンダー上の前日の日付にする
-  if (currentHour < resetHour) {
-    d.setDate(d.getDate() - 1);
-  }
-  
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const date = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${date}`;
-}
 
 // バッジ表示を更新する関数
 async function updateBadge(todaySeconds, limitSeconds) {
@@ -69,16 +217,18 @@ async function updateBadge(todaySeconds, limitSeconds) {
 
 // 日付が変わっているかチェックし、変わっていればリセットする関数
 async function checkAndResetDate() {
-  const { lastActiveDate, limitSeconds = DEFAULT_LIMIT_SECONDS, resetHour = 4 } = await chrome.storage.local.get(['lastActiveDate', 'limitSeconds', 'resetHour']);
+  const { lastActiveDate, resetHour = 4 } = await chrome.storage.local.get(['lastActiveDate', 'resetHour']);
   const businessToday = getBusinessDateString(resetHour);
   
   if (lastActiveDate !== businessToday) {
+    const activeLimit = await getActiveLimit();
     await chrome.storage.local.set({
       todaySeconds: 0,
       continuousSeconds: 0, // 連続視聴もリセット
-      lastActiveDate: businessToday
+      lastActiveDate: businessToday,
+      limitSeconds: activeLimit
     });
-    await updateBadge(0, limitSeconds);
+    await updateBadge(0, activeLimit);
     return true;
   }
   return false;
@@ -223,6 +373,12 @@ if (typeof module !== 'undefined') {
     checkAndResetDate,
     checkAndResetContinuous,
     DEFAULT_LIMIT_SECONDS,
-    DEFAULT_BREAK_SECONDS
+    DEFAULT_BREAK_SECONDS,
+    getBusinessDate,
+    isHolidayOrWeekend,
+    isHoliday,
+    getHolidays,
+    getActiveLimitKey,
+    getActiveLimit
   };
 }

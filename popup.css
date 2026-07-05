@@ -19,7 +19,7 @@
 }
 
 body {
-  width: 320px;
+  width: 350px;
   background-color: var(--bg-primary);
   font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: var(--text-primary);
@@ -251,4 +251,82 @@ header h1 {
   margin-bottom: 0;
   cursor: pointer;
   user-select: none;
+}
+
+/* 曜日・祝日別制限時間グリッド */
+.limit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 12px;
+  row-gap: 8px;
+  margin-top: 8px;
+}
+
+.limit-grid-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 8px;
+  transition: border-color 0.2s ease;
+}
+
+.limit-grid-item:focus-within {
+  border-color: #606060;
+}
+
+.limit-grid-item label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0;
+}
+
+.limit-input-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.limit-input-group input {
+  width: 24px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: center;
+  outline: none;
+  padding: 2px 0;
+}
+
+/* Chrome/Safariなどのスピンボタンを非表示 */
+.limit-input-group input::-webkit-outer-spin-button,
+.limit-input-group input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Firefox用スピンボタン非表示 */
+.limit-input-group input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.limit-input-group span {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.limit-grid-item.highlight-holiday {
+  border-color: rgba(192, 44, 44, 0.4);
+}
+
+.limit-grid-item.highlight-holiday label {
+  color: var(--accent-color);
+}
+
+.limit-grid-item.highlight-holiday:focus-within {
+  border-color: var(--accent-color);
 }

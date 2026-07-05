@@ -45,12 +45,80 @@
         <h2>設定</h2>
         
         <div class="form-group">
-          <label for="limit-hours">1日の制限時間</label>
-          <div class="input-row">
-            <input type="number" id="limit-hours" min="0" max="23" value="1">
-            <span>時間</span>
-            <input type="number" id="limit-minutes" min="0" max="59" value="30">
-            <span>分</span>
+          <label>曜日・祝日別の制限時間</label>
+          <div class="limit-grid">
+            <div class="limit-grid-item">
+              <label for="limit-hours-1">月</label>
+              <div class="limit-input-group">
+                <input type="number" id="limit-hours-1" min="0" max="23" value="1">
+                <span>h</span>
+                <input type="number" id="limit-minutes-1" min="0" max="59" value="30">
+                <span>m</span>
+              </div>
+            </div>
+            <div class="limit-grid-item">
+              <label for="limit-hours-5">金</label>
+              <div class="limit-input-group">
+                <input type="number" id="limit-hours-5" min="0" max="23" value="1">
+                <span>h</span>
+                <input type="number" id="limit-minutes-5" min="0" max="59" value="30">
+                <span>m</span>
+              </div>
+            </div>
+            <div class="limit-grid-item">
+              <label for="limit-hours-2">火</label>
+              <div class="limit-input-group">
+                <input type="number" id="limit-hours-2" min="0" max="23" value="1">
+                <span>h</span>
+                <input type="number" id="limit-minutes-2" min="0" max="59" value="30">
+                <span>m</span>
+              </div>
+            </div>
+            <div class="limit-grid-item">
+              <label for="limit-hours-6">土</label>
+              <div class="limit-input-group">
+                <input type="number" id="limit-hours-6" min="0" max="23" value="1">
+                <span>h</span>
+                <input type="number" id="limit-minutes-6" min="0" max="59" value="30">
+                <span>m</span>
+              </div>
+            </div>
+            <div class="limit-grid-item">
+              <label for="limit-hours-3">水</label>
+              <div class="limit-input-group">
+                <input type="number" id="limit-hours-3" min="0" max="23" value="1">
+                <span>h</span>
+                <input type="number" id="limit-minutes-3" min="0" max="59" value="30">
+                <span>m</span>
+              </div>
+            </div>
+            <div class="limit-grid-item">
+              <label for="limit-hours-0">日</label>
+              <div class="limit-input-group">
+                <input type="number" id="limit-hours-0" min="0" max="23" value="1">
+                <span>h</span>
+                <input type="number" id="limit-minutes-0" min="0" max="59" value="30">
+                <span>m</span>
+              </div>
+            </div>
+            <div class="limit-grid-item">
+              <label for="limit-hours-4">木</label>
+              <div class="limit-input-group">
+                <input type="number" id="limit-hours-4" min="0" max="23" value="1">
+                <span>h</span>
+                <input type="number" id="limit-minutes-4" min="0" max="59" value="30">
+                <span>m</span>
+              </div>
+            </div>
+            <div class="limit-grid-item highlight-holiday">
+              <label for="limit-hours-H">祝</label>
+              <div class="limit-input-group">
+                <input type="number" id="limit-hours-H" min="0" max="23" value="1">
+                <span>h</span>
+                <input type="number" id="limit-minutes-H" min="0" max="59" value="30">
+                <span>m</span>
+              </div>
+            </div>
           </div>
         </div>
 
