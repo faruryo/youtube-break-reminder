@@ -2,6 +2,15 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap');
 
+:root {
+  --bg-primary: #12100f;      /* 極暗ローストブラウン */
+  --bg-secondary: #1e1b18;    /* ダークモカ */
+  --border-color: #312a25;    /* ローストブラウンの境界線 */
+  --text-primary: #f5f0eb;    /* クリーミーホワイト */
+  --text-secondary: #b09e90;  /* ラテベージュ */
+  --accent-color: #c02c2c;    /* 落ち着いたYouTubeレッド */
+}
+
 #yt-break-reminder-block-overlay,
 #yt-break-reminder-break-overlay {
   position: fixed;
@@ -9,7 +18,7 @@
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(15, 15, 15, 0.85); /* ダークな背景 */
+  background: rgba(18, 16, 15, 0.85); /* エスプレッソ色のダークな背景 */
   backdrop-filter: blur(20px); /* 綺麗なぼかし（グラスモルフィズム） */
   -webkit-backdrop-filter: blur(20px);
   z-index: 2147483647; /* 最前面に配置（全画面表示の動画やUIをも超える） */
@@ -17,7 +26,7 @@
   justify-content: center;
   align-items: center;
   font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  color: #f1f1f1;
+  color: var(--text-primary);
   animation: ybr-fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
@@ -32,15 +41,15 @@
 }
 
 .ybr-card {
-  background: rgba(30, 30, 30, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(30, 27, 24, 0.7);
+  border: 1px solid rgba(176, 158, 144, 0.15);
   border-radius: 24px;
   padding: 48px;
   width: 90%;
   max-width: 480px;
   text-align: center;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4),
-              inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5),
+              inset 0 1px 0 rgba(255, 255, 255, 0.05);
   animation: ybr-scale-up 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
@@ -75,21 +84,19 @@
   font-size: 28px;
   font-weight: 700;
   margin: 0 0 16px 0;
-  background: linear-gradient(135deg, #ffffff 0%, #a5a5a5 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text-primary);
 }
 
 .ybr-card p {
   font-size: 16px;
   line-height: 1.6;
-  color: #cccccc;
+  color: var(--text-secondary);
   margin: 0 0 12px 0;
 }
 
 .ybr-card .ybr-subtext {
   font-size: 14px;
-  color: #888888;
+  color: #8c7e74; /* 落ち着いたダークベージュ */
   margin-top: 16px;
   margin-bottom: 0;
 }
@@ -104,24 +111,27 @@
   border-radius: 14px;
   border: none;
   cursor: not-allowed;
-  background: rgba(255, 255, 255, 0.1);
-  color: #777777;
+  background: rgba(176, 158, 144, 0.08); /* 落ち着いたモカ調の無効化カラー */
+  color: #6d5d54;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   width: 100%;
 }
 
 #ybr-resume-btn.active {
   cursor: pointer;
-  background: linear-gradient(135deg, #ff4e50 0%, #f9d423 100%); /* 美しいグラデーション */
-  color: #0f0f0f;
-  box-shadow: 0 4px 15px rgba(255, 78, 80, 0.3);
+  background: var(--accent-color);
+  color: #ffffff;
+  box-shadow: 0 4px 15px rgba(192, 44, 44, 0.3);
 }
 
 #ybr-resume-btn.active:hover {
+  background: #a02020;
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(255, 78, 80, 0.5);
+  box-shadow: 0 6px 20px rgba(192, 44, 44, 0.45);
 }
 
 #ybr-resume-btn.active:active {
+  background: #801818;
   transform: translateY(0);
+  box-shadow: 0 4px 10px rgba(192, 44, 44, 0.3);
 }

@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const minutesInput = document.getElementById('limit-minutes');
   const breakIntervalInput = document.getElementById('break-interval');
   const resetHourInput = document.getElementById('reset-hour');
+  const debugEnabledInput = document.getElementById('debug-enabled');
   
   const saveBtn = document.getElementById('save-btn');
   const saveStatus = document.getElementById('save-status');
@@ -28,7 +29,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       'limitSeconds',
       'breakIntervalSeconds',
       'continuousSeconds',
-      'resetHour'
+      'resetHour',
+      'isDebugEnabled'
     ]);
 
     const todaySeconds = data.todaySeconds || 0;
@@ -47,10 +49,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const remaining = limitSeconds - todaySeconds;
     if (remaining <= 0) {
       remainingText.textContent = '制限時間に達しました';
-      remainingText.style.color = '#ff4e50';
+      remainingText.style.color = 'var(--accent-color)';
     } else {
       remainingText.textContent = formatTimeLong(remaining);
-      remainingText.style.color = '#ff9900';
+      remainingText.style.color = '#dca163'; // 落ち着いたキャラメルカラー
     }
 
     // 連続視聴時間の更新
@@ -71,6 +73,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (document.activeElement !== resetHourInput) {
       resetHourInput.value = resetHour;
+    }
+
+    if (document.activeElement !== debugEnabledInput) {
+      debugEnabledInput.checked = !!data.isDebugEnabled;
     }
   }
 
@@ -132,7 +138,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     await chrome.storage.local.set({
       limitSeconds: validatedLimitSeconds,
       breakIntervalSeconds,
-      resetHour: finalResetH
+      resetHour: finalResetH,
+      isDebugEnabled: debugEnabledInput.checked
     });
 
     // バックグラウンドに設定変更を通知してバッジを更新させる
@@ -149,6 +156,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => {
       saveStatus.classList.remove('show');
     }, 2000);
+  });
+
+  // デバッグチェックボックスの変更を即時保存
+  debugEnabledInput.addEventListener('change', async () => {
+    await chrome.storage.local.set({
+      isDebugEnabled: debugEnabledInput.checked
+    });
   });
 
   // ロード時実行

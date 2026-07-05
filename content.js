@@ -6,6 +6,7 @@ let continuousSeconds = 0;
 let heartbeatIntervalId = null;
 let isBlocked = false;
 let isBreakShowing = false;
+let isDebugEnabled = false;
 
 // ユーザーのアクティビティを監視するための変数
 let lastInteractionTime = Date.now();
@@ -23,6 +24,10 @@ async function init() {
     breakIntervalSeconds = status.breakIntervalSeconds;
   }
   
+  // ストレージからデバッグモード設定を取得
+  const data = await chrome.storage.local.get(['isDebugEnabled']);
+  isDebugEnabled = !!data.isDebugEnabled;
+
   // 初期状態で既に制限時間を超えているか確認
   if (todaySeconds >= limitSeconds) {
     showBlockOverlay();
@@ -46,6 +51,15 @@ async function init() {
         todaySeconds = changes.todaySeconds.newValue;
         checkDailyLimit();
       }
+      if (changes.isDebugEnabled) {
+        isDebugEnabled = !!changes.isDebugEnabled.newValue;
+        // 即座にデバッグ表示を切り替える
+        const isVisible = document.visibilityState === 'visible';
+        const playing = isVideoPlaying();
+        const recentInteraction = (Date.now() - lastInteractionTime) < 60000;
+        const isActive = isVisible && (playing || recentInteraction);
+        updateDebugPanel(isVisible, playing, recentInteraction, isActive);
+      }
     }
   });
 }
@@ -64,6 +78,14 @@ function registerInteractionListeners() {
 
 // デバッグパネルの作成とリアルタイム更新
 function updateDebugPanel(isVisible, playing, recentInteraction, isActive) {
+  if (!isDebugEnabled) {
+    const existingPanel = document.getElementById('ybr-debug-panel');
+    if (existingPanel) {
+      existingPanel.remove();
+    }
+    return;
+  }
+  
   let panel = document.getElementById('ybr-debug-panel');
   if (!panel) {
     panel = document.createElement('div');

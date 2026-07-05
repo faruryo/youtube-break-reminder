@@ -19,8 +19,8 @@
       <div class="stats-card">
         <div class="progress-container">
           <svg class="progress-ring" width="120" height="120">
-            <circle class="progress-ring__circle-bg" stroke="rgba(255,255,255,0.05)" stroke-width="6" fill="transparent" r="50" cx="60" cy="60"/>
-            <circle class="progress-ring__circle" stroke="#ff0000" stroke-width="6" stroke-linecap="round" fill="transparent" r="50" cx="60" cy="60"/>
+            <circle class="progress-ring__circle-bg" stroke="var(--border-color)" stroke-width="6" fill="transparent" r="50" cx="60" cy="60"/>
+            <circle class="progress-ring__circle" stroke="var(--accent-color)" stroke-width="6" stroke-linecap="round" fill="transparent" r="50" cx="60" cy="60"/>
           </svg>
           <div class="progress-text">
             <span id="current-time">0m</span>
@@ -35,7 +35,7 @@
           </div>
           <div class="time-item" style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-color);">
             <span class="time-label">現在の連続利用時間</span>
-            <span id="continuous-time" class="time-value" style="color: #64b5f6;">--s</span>
+            <span id="continuous-time" class="time-value" style="color: var(--text-secondary);">--s</span>
           </div>
         </div>
       </div>
@@ -68,6 +68,11 @@
             <input type="number" id="reset-hour" min="0" max="23" value="4">
             <span>時</span>
           </div>
+        </div>
+
+        <div class="form-group checkbox-group">
+          <input type="checkbox" id="debug-enabled">
+          <label for="debug-enabled">デバッグ画面を表示する</label>
         </div>
 
         <button id="save-btn" class="save-btn">設定を保存</button>

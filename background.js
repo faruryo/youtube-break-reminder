@@ -3,7 +3,7 @@ const DEFAULT_BREAK_SECONDS = 30 * 60; // デフォルト30分
 
 // インストール時に初期設定を保存
 chrome.runtime.onInstalled.addListener(async () => {
-  const data = await chrome.storage.local.get(['limitSeconds', 'breakIntervalSeconds', 'todaySeconds', 'lastActiveDate', 'continuousSeconds', 'lastHeartbeatTime', 'resetHour']);
+  const data = await chrome.storage.local.get(['limitSeconds', 'breakIntervalSeconds', 'todaySeconds', 'lastActiveDate', 'continuousSeconds', 'lastHeartbeatTime', 'resetHour', 'isDebugEnabled']);
   
   const updates = {};
   if (data.limitSeconds === undefined) updates.limitSeconds = DEFAULT_LIMIT_SECONDS;
@@ -12,6 +12,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   if (data.continuousSeconds === undefined) updates.continuousSeconds = 0;
   if (data.lastHeartbeatTime === undefined) updates.lastHeartbeatTime = 0;
   if (data.resetHour === undefined) updates.resetHour = 4; // デフォルト朝4時
+  if (data.isDebugEnabled === undefined) updates.isDebugEnabled = false; // デフォルト無効
   
   const finalResetHour = updates.resetHour !== undefined ? updates.resetHour : (data.resetHour !== undefined ? data.resetHour : 4);
   const businessToday = getBusinessDateString(finalResetHour);
@@ -47,7 +48,7 @@ async function updateBadge(todaySeconds, limitSeconds) {
   const remaining = limitSeconds - todaySeconds;
   if (remaining <= 0) {
     await chrome.action.setBadgeText({ text: 'LMT' });
-    await chrome.action.setBadgeBackgroundColor({ color: '#FF0000' }); // 赤背景
+    await chrome.action.setBadgeBackgroundColor({ color: '#c02c2c' }); // 落ち着いたレッド
   } else {
     const remainingMinutes = Math.ceil(remaining / 60);
     if (remainingMinutes >= 60) {
@@ -57,11 +58,11 @@ async function updateBadge(todaySeconds, limitSeconds) {
       await chrome.action.setBadgeText({ text: `${remainingMinutes}m` });
     }
     
-    // 残り時間に応じて色を変える (15分未満でオレンジ、それ以上は緑)
+    // 残り時間に応じて色を変える (15分未満でキャラメル、それ以上は抹茶グリーン)
     if (remainingMinutes < 15) {
-      await chrome.action.setBadgeBackgroundColor({ color: '#FFA500' });
+      await chrome.action.setBadgeBackgroundColor({ color: '#dca163' });
     } else {
-      await chrome.action.setBadgeBackgroundColor({ color: '#4CAF50' });
+      await chrome.action.setBadgeBackgroundColor({ color: '#5d8c67' });
     }
   }
 }

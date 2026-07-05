@@ -3,13 +3,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
 
 :root {
-  --bg-primary: #0f0f0f;      /* YouTube公式のダークモードに近い黒 */
-  --bg-secondary: #1f1f1f;    /* カードの背景 */
-  --border-color: #272727;    /* 境界線 */
-  --text-primary: #f1f1f1;    /* 主要テキスト */
-  --text-secondary: #aaaaaa;  /* サブテキスト */
-  --accent-color: #ff0000;    /* YouTube Red */
-  --input-bg: #121212;
+  --bg-primary: #12100f;      /* エスプレッソ風の極暗いブラウニッシュブラック */
+  --bg-secondary: #1e1b18;    /* 深みのあるモカブラウン */
+  --border-color: #312a25;    /* 落ち着いたローストブラウンの境界線 */
+  --text-primary: #f5f0eb;    /* 温かみのあるクリーミーホワイト */
+  --text-secondary: #b09e90;  /* ミルク感のあるラテベージュ */
+  --accent-color: #c02c2c;    /* コーヒーの暖かみと調和する、少し落ち着いたYouTubeレッド */
+  --input-bg: #181513;
 }
 
 * {
@@ -194,30 +194,31 @@ header h1 {
 .save-btn {
   width: 100%;
   padding: 10px;
-  background: #ffffff;
-  color: #0f0f0f;
+  background: var(--accent-color);
+  color: #ffffff;
   border: none;
   border-radius: 6px;
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: background-color 0.2s ease, transform 0.1s ease;
   margin-top: 8px;
 }
 
 .save-btn:hover {
-  background: #e5e5e5;
+  background: #a02020;
 }
 
 .save-btn:active {
-  background: #cccccc;
+  background: #801818;
+  transform: scale(0.98);
 }
 
 .save-status {
   text-align: center;
   font-size: 11px;
-  color: #2ba640; /* 落ち着いた緑 */
+  color: #5d8c67; /* 落ち着いた抹茶グリーン */
   margin-top: 10px;
   opacity: 0;
   transition: opacity 0.2s ease;
@@ -225,4 +226,29 @@ header h1 {
 
 .save-status.show {
   opacity: 1;
+}
+
+/* チェックボックス用スタイル */
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.checkbox-group input[type="checkbox"] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-color);
+}
+
+.checkbox-group label {
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-bottom: 0;
+  cursor: pointer;
+  user-select: none;
 }
