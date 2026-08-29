@@ -18,7 +18,15 @@ global.chrome = {
   }
 };
 
+global.document = {
+  addEventListener: jest.fn(),
+  querySelector: jest.fn().mockReturnValue({ r: { baseVal: { value: 50 } }, style: {} }),
+  querySelectorAll: jest.fn().mockReturnValue([]),
+  getElementById: jest.fn().mockReturnValue({ addEventListener: jest.fn(), classList: { add: jest.fn(), remove: jest.fn() }, style: {} })
+};
+
 const background = require('../background');
+const popup = require('../popup');
 
 describe('YouTube Break Reminder - background.js Tests', () => {
   beforeEach(() => {
@@ -261,6 +269,175 @@ describe('YouTube Break Reminder - background.js Tests', () => {
       jest.setSystemTime(new Date('2026-01-01T12:00:00+09:00')); // New Year's Day
       const limit = await background.getActiveLimit();
       expect(limit).toBe(3 * 3600); // 3h
+    });
+  });
+
+  describe('background.js - recordUsageHistory()', () => {
+    it('should initialize usageHistory and record seconds for the current hour', async () => {
+      chrome.storage.local.get.mockResolvedValue({}); // No existing data
+
+      // 2026-08-25 14:30:00 JST (hour: 14)
+      const mockTime = new Date('2026-08-25T14:30:00+09:00').getTime();
+      await background.recordUsageHistory(10, mockTime);
+
+      expect(chrome.storage.local.set).toHaveBeenCalled();
+      const savedData = chrome.storage.local.set.mock.calls[0][0];
+      
+      expect(savedData.usageHistory).toBeDefined();
+      expect(savedData.usageHistory['2026-08-25']).toBeDefined();
+      expect(savedData.usageHistory['2026-08-25'].hourly[14]).toBe(10);
+      expect(savedData.usageHistory['2026-08-25'].total).toBe(10);
+      expect(savedData.usageHistory['2026-08-25'].hourly[0]).toBe(0);
+    });
+
+    it('should accumulate seconds in the same hour across multiple calls', async () => {
+      const existingHistory = {
+        '2026-08-25': {
+          hourly: new Array(24).fill(0),
+          total: 50
+        }
+      };
+      existingHistory['2026-08-25'].hourly[14] = 50;
+
+      chrome.storage.local.get.mockResolvedValue({ usageHistory: existingHistory });
+
+      const mockTime = new Date('2026-08-25T14:35:00+09:00').getTime();
+      await background.recordUsageHistory(30, mockTime);
+
+      const savedData = chrome.storage.local.set.mock.calls[0][0];
+      expect(savedData.usageHistory['2026-08-25'].hourly[14]).toBe(80);
+      expect(savedData.usageHistory['2026-08-25'].total).toBe(80);
+    });
+
+    it('should record into different hours correctly', async () => {
+      const existingHistory = {
+        '2026-08-25': {
+          hourly: new Array(24).fill(0),
+          total: 60
+        }
+      };
+      existingHistory['2026-08-25'].hourly[10] = 60;
+
+      chrome.storage.local.get.mockResolvedValue({ usageHistory: existingHistory });
+
+      const mockTime = new Date('2026-08-25T21:15:00+09:00').getTime();
+      await background.recordUsageHistory(120, mockTime);
+
+      const savedData = chrome.storage.local.set.mock.calls[0][0];
+      expect(savedData.usageHistory['2026-08-25'].hourly[10]).toBe(60);
+      expect(savedData.usageHistory['2026-08-25'].hourly[21]).toBe(120);
+      expect(savedData.usageHistory['2026-08-25'].total).toBe(180);
+    });
+
+    it('should purge entries older than 365 days', async () => {
+      const largeHistory = {};
+      for (let i = 1; i <= 370; i++) {
+        const dateKey = `2025-01-${String(i).padStart(3, '0')}`;
+        largeHistory[dateKey] = { hourly: new Array(24).fill(0), total: 100 };
+      }
+
+      chrome.storage.local.get.mockResolvedValue({ usageHistory: largeHistory });
+
+      const mockTime = new Date('2026-08-25T14:00:00+09:00').getTime();
+      await background.recordUsageHistory(10, mockTime);
+
+      const savedData = chrome.storage.local.set.mock.calls[0][0];
+      const remainingKeys = Object.keys(savedData.usageHistory);
+      expect(remainingKeys.length).toBeLessThanOrEqual(365);
+    });
+  });
+
+  describe('popup.js - Formatting & Aggregation Helpers', () => {
+    it('formatDateKey() should return YYYY-MM-DD format', () => {
+      const d = new Date('2026-08-05T10:00:00+09:00');
+      expect(popup.formatDateKey(d)).toBe('2026-08-05');
+    });
+
+    it('formatTimeJapanese() should format seconds into Japanese representation', () => {
+      expect(popup.formatTimeJapanese(0)).toBe('0分');
+      expect(popup.formatTimeJapanese(45)).toBe('45秒');
+      expect(popup.formatTimeJapanese(120)).toBe('2分');
+      expect(popup.formatTimeJapanese(3600)).toBe('1時間');
+      expect(popup.formatTimeJapanese(5400)).toBe('1時間30分');
+    });
+
+    it('findPeakHour() should find the hour with highest viewing seconds', () => {
+      const hourly = new Array(24).fill(0);
+      hourly[9] = 600;  // 9:00 -> 10m
+      hourly[21] = 3600; // 21:00 -> 60m
+      hourly[22] = 1800; // 22:00 -> 30m
+
+      const peak = popup.findPeakHour(hourly);
+      expect(peak.hour).toBe(21);
+      expect(peak.maxSeconds).toBe(3600);
+    });
+
+    it('findPeakHour() should return hour: -1 when all slots are 0', () => {
+      const hourly = new Array(24).fill(0);
+      const peak = popup.findPeakHour(hourly);
+      expect(peak.hour).toBe(-1);
+      expect(peak.maxSeconds).toBe(0);
+    });
+
+    it('aggregateDailyHistory() should return day stats correctly', () => {
+      const mockHistory = {
+        '2026-08-25': {
+          hourly: new Array(24).fill(0),
+          total: 1200
+        }
+      };
+      mockHistory['2026-08-25'].hourly[15] = 1200;
+
+      const daily = popup.aggregateDailyHistory('2026-08-25', mockHistory);
+      expect(daily.total).toBe(1200);
+      expect(daily.hourly[15]).toBe(1200);
+      expect(daily.hourly[0]).toBe(0);
+    });
+
+    it('aggregateWeeklyHistory() should group 7 days starting from Monday', () => {
+      const mockHistory = {
+        '2026-08-24': { hourly: new Array(24).fill(0), total: 3600 }, // Mon
+        '2026-08-25': { hourly: new Array(24).fill(0), total: 7200 }, // Tue
+        '2026-08-26': { hourly: new Array(24).fill(0), total: 1800 }, // Wed
+      };
+      mockHistory['2026-08-24'].hourly[20] = 3600;
+      mockHistory['2026-08-25'].hourly[20] = 3600;
+      mockHistory['2026-08-25'].hourly[21] = 3600;
+      mockHistory['2026-08-26'].hourly[20] = 1800;
+
+      const targetDate = new Date('2026-08-26T12:00:00+09:00');
+      const weekly = popup.aggregateWeeklyHistory(targetDate, mockHistory);
+
+      expect(weekly.mondayDateStr).toBe('2026-08-24');
+      expect(weekly.sundayDateStr).toBe('2026-08-30');
+      expect(weekly.days.length).toBe(7);
+      expect(weekly.total).toBe(12600);
+      expect(weekly.average).toBe(Math.round(12600 / 7));
+      expect(weekly.hourly[20]).toBe(9000);
+      expect(weekly.hourly[21]).toBe(3600);
+    });
+
+    it('aggregateMonthlyHistory() should group all days in the given month', () => {
+      const mockHistory = {
+        '2026-08-01': { hourly: new Array(24).fill(0), total: 1000 },
+        '2026-08-15': { hourly: new Array(24).fill(0), total: 2000 },
+        '2026-08-31': { hourly: new Array(24).fill(0), total: 3000 },
+        '2026-09-01': { hourly: new Array(24).fill(0), total: 5000 },
+      };
+      mockHistory['2026-08-01'].hourly[8] = 1000;
+      mockHistory['2026-08-15'].hourly[8] = 2000;
+      mockHistory['2026-08-31'].hourly[8] = 3000;
+
+      const targetDate = new Date('2026-08-10T12:00:00+09:00');
+      const monthly = popup.aggregateMonthlyHistory(targetDate, mockHistory);
+
+      expect(monthly.year).toBe(2026);
+      expect(monthly.month).toBe(8);
+      expect(monthly.daysInMonth).toBe(31);
+      expect(monthly.days.length).toBe(31);
+      expect(monthly.total).toBe(6000);
+      expect(monthly.average).toBe(Math.round(6000 / 31));
+      expect(monthly.hourly[8]).toBe(6000);
     });
   });
 });

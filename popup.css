@@ -330,3 +330,340 @@ header h1 {
 .limit-grid-item.highlight-holiday:focus-within {
   border-color: var(--accent-color);
 }
+
+/* タブナビゲーション */
+.tab-nav {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  background: var(--bg-secondary);
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.tab-btn.active {
+  background: var(--input-bg);
+  color: var(--text-primary);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* 期間セレクター (日別/週別/月別) */
+.view-switcher {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.view-btn {
+  flex: 1;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.view-btn:hover {
+  color: var(--text-primary);
+  border-color: #606060;
+}
+
+.view-btn.active {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: #ffffff;
+}
+
+/* 日付ナビゲーション */
+.date-navigator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 14px;
+}
+
+.nav-arrow-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.nav-arrow-btn:hover {
+  color: var(--text-primary);
+  background: var(--input-bg);
+}
+
+.date-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.2px;
+}
+
+.today-badge-btn {
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.today-badge-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+/* レポートサマリーカード */
+.report-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.summary-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.summary-card.full-width {
+  grid-column: span 2;
+}
+
+.summary-title {
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.summary-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.summary-value.highlight {
+  color: #ff9900;
+}
+
+/* チャートカード */
+.report-chart-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.chart-header h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.chart-sub {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.hourly-chart-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hourly-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 75px;
+  padding-top: 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.hourly-bar-col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  cursor: pointer;
+  position: relative;
+}
+
+.hourly-bar {
+  width: 100%;
+  min-height: 2px;
+  background: #2a2420;
+  border-radius: 2px 2px 0 0;
+  transition: height 0.3s ease, background-color 0.2s ease;
+}
+
+.hourly-bar.has-data {
+  background: #dca163;
+}
+
+.hourly-bar.is-peak {
+  background: var(--accent-color);
+}
+
+.hourly-bar-col:hover .hourly-bar,
+.hourly-bar-col.selected .hourly-bar {
+  filter: brightness(1.3);
+}
+
+.hourly-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--text-secondary);
+  padding-top: 3px;
+}
+
+/* トレンドチャート (週別・月別用) */
+.trend-chart-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trend-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 80px;
+  padding-top: 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.trend-bar-col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  cursor: pointer;
+  gap: 4px;
+}
+
+.trend-bar-wrapper {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+}
+
+.trend-bar {
+  width: 100%;
+  min-height: 2px;
+  background: #2a2420;
+  border-radius: 3px 3px 0 0;
+  transition: height 0.3s ease, background-color 0.2s ease;
+}
+
+.trend-bar.has-data {
+  background: #5d8c67;
+}
+
+.trend-bar.is-today {
+  box-shadow: 0 0 4px rgba(220, 161, 99, 0.6);
+}
+
+.trend-bar-col:hover .trend-bar,
+.trend-bar-col.selected .trend-bar {
+  filter: brightness(1.3);
+}
+
+.trend-bar-label {
+  font-size: 9px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* ツールチップテキスト */
+.chart-tooltip {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: center;
+  min-height: 16px;
+}
+
+.chart-tooltip strong {
+  color: var(--text-primary);
+}
+
+/* データ削除ボタン */
+.history-actions {
+  margin-top: 14px;
+  text-align: center;
+}
+
+.secondary-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.secondary-btn:hover {
+  color: #ff4e50;
+  border-color: #ff4e50;
+  background: rgba(255, 78, 80, 0.08);
+}
+

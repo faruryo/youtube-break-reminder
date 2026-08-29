@@ -14,8 +14,14 @@
       </div>
     </header>
 
-    <!-- 進捗エリア -->
-    <main>
+    <!-- タブナビゲーション -->
+    <nav class="tab-nav">
+      <button id="tab-timer" class="tab-btn active">タイマー・設定</button>
+      <button id="tab-report" class="tab-btn">利用レポート</button>
+    </nav>
+
+    <!-- タイマー・設定タブ -->
+    <main id="timer-section" class="tab-content">
       <div class="stats-card">
         <div class="progress-container">
           <svg class="progress-ring" width="120" height="120">
@@ -145,6 +151,75 @@
 
         <button id="save-btn" class="save-btn">設定を保存</button>
         <div id="save-status" class="save-status">設定を保存しました</div>
+      </div>
+    </main>
+
+    <!-- 利用レポートタブ -->
+    <main id="report-section" class="tab-content" style="display: none;">
+      <!-- 期間セレクター (日別/週別/月別) -->
+      <div class="view-switcher">
+        <button id="view-daily" class="view-btn active">日別</button>
+        <button id="view-weekly" class="view-btn">週別</button>
+        <button id="view-monthly" class="view-btn">月別</button>
+      </div>
+
+      <!-- 日付ナビゲーション -->
+      <div class="date-navigator">
+        <button id="prev-date-btn" class="nav-arrow-btn" title="前へ">◀</button>
+        <span id="date-display-label" class="date-label">----/--/--</span>
+        <button id="next-date-btn" class="nav-arrow-btn" title="次へ">▶</button>
+        <button id="today-btn" class="today-badge-btn">今日</button>
+      </div>
+
+      <!-- サマリー統計カード -->
+      <div class="report-summary-grid">
+        <div class="summary-card">
+          <span class="summary-title" id="summary-title-total">総視聴時間</span>
+          <span class="summary-value" id="report-total-time">0分</span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-title" id="summary-title-avg">1日平均</span>
+          <span class="summary-value" id="report-avg-time">--</span>
+        </div>
+        <div class="summary-card full-width">
+          <span class="summary-title">最も視聴した時間帯</span>
+          <span class="summary-value highlight" id="report-peak-hour">なし</span>
+        </div>
+      </div>
+
+      <!-- 24時間別チャート -->
+      <div class="report-chart-card">
+        <div class="chart-header">
+          <h3>時間帯別の視聴時間</h3>
+          <span id="hourly-chart-sub" class="chart-sub">24時間分布</span>
+        </div>
+        <div class="hourly-chart-container">
+          <div id="hourly-chart" class="hourly-chart"></div>
+          <div class="hourly-axis">
+            <span>0時</span>
+            <span>6時</span>
+            <span>12時</span>
+            <span>18時</span>
+            <span>23時</span>
+          </div>
+        </div>
+        <div id="hourly-tooltip" class="chart-tooltip">バーをタップ/ホバーで詳細表示</div>
+      </div>
+
+      <!-- 日別推移チャート（週別・月別用） -->
+      <div id="trend-chart-card" class="report-chart-card" style="display: none;">
+        <div class="chart-header">
+          <h3 id="trend-chart-title">日別の推移</h3>
+        </div>
+        <div class="trend-chart-container">
+          <div id="trend-chart" class="trend-chart"></div>
+        </div>
+        <div id="trend-tooltip" class="chart-tooltip">各日の利用時間</div>
+      </div>
+
+      <!-- データ管理（リセット等） -->
+      <div class="history-actions">
+        <button id="clear-history-btn" class="secondary-btn">履歴データを全消去</button>
       </div>
     </main>
   </div>

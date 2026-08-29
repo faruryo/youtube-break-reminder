@@ -268,6 +268,48 @@ async function checkAndResetContinuous() {
   return data.continuousSeconds || 0;
 }
 
+// 視聴履歴の記録（時間帯別）
+async function recordUsageHistory(secondsToAdd, now = Date.now()) {
+  const dateObj = new Date(now);
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  const dateStr = `${year}-${month}-${day}`;
+  const currentHour = dateObj.getHours(); // 0..23
+
+  const data = await chrome.storage.local.get('usageHistory');
+  const usageHistory = data.usageHistory || {};
+
+  if (!usageHistory[dateStr]) {
+    usageHistory[dateStr] = {
+      hourly: new Array(24).fill(0),
+      total: 0
+    };
+  } else if (!Array.isArray(usageHistory[dateStr].hourly) || usageHistory[dateStr].hourly.length !== 24) {
+    const existing = usageHistory[dateStr].hourly || [];
+    const hourly = new Array(24).fill(0);
+    for (let h = 0; h < 24; h++) {
+      hourly[h] = existing[h] || 0;
+    }
+    usageHistory[dateStr].hourly = hourly;
+  }
+
+  usageHistory[dateStr].hourly[currentHour] = (usageHistory[dateStr].hourly[currentHour] || 0) + secondsToAdd;
+  usageHistory[dateStr].total = (usageHistory[dateStr].total || 0) + secondsToAdd;
+
+  // 365日を超過した過去データの整理
+  const keys = Object.keys(usageHistory).sort();
+  if (keys.length > 365) {
+    const toDeleteCount = keys.length - 365;
+    for (let i = 0; i < toDeleteCount; i++) {
+      delete usageHistory[keys[i]];
+    }
+  }
+
+  await chrome.storage.local.set({ usageHistory });
+  return usageHistory;
+}
+
 let lastIncrementTime = 0;
 
 // メッセージハンドラ
@@ -323,6 +365,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           continuousSeconds,
           lastHeartbeatTime: now
         });
+        await recordUsageHistory(secondsToAdd, now);
         await updateBadge(todaySeconds, limitSeconds);
         
         const limitExceeded = todaySeconds >= limitSeconds;
@@ -381,6 +424,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: false, error: err.message });
       }
     })();
+    return true;
+  }
+
+  if (message.type === 'CLEAR_HISTORY') {
+    (async () => {
+      try {
+        await chrome.storage.local.set({ usageHistory: {} });
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
   }
 });
 
@@ -389,6 +445,7 @@ if (typeof module !== 'undefined') {
     getBusinessDateString,
     checkAndResetDate,
     checkAndResetContinuous,
+    recordUsageHistory,
     DEFAULT_LIMIT_SECONDS,
     DEFAULT_LIMIT_SECONDS_WEEKEND,
     DEFAULT_BREAK_SECONDS,
