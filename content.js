@@ -223,15 +223,41 @@ function checkIntervalBreak() {
   }
 }
 
+// キーの長押し（repeat）が解除後に漏れてスクロールや意図しない再生を起こさないよう、keyupまで一時遮断
+function blockKeyUntilRelease(releasedKeyCode) {
+  let fallbackTimeout = null;
+  const handleReleasingKey = (e) => {
+    if (e.code === releasedKeyCode || e.key === releasedKeyCode) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      if (e.type === 'keyup') {
+        if (fallbackTimeout) clearTimeout(fallbackTimeout);
+        document.removeEventListener('keydown', handleReleasingKey, true);
+        document.removeEventListener('keyup', handleReleasingKey, true);
+      }
+    }
+  };
+  document.addEventListener('keydown', handleReleasingKey, true);
+  document.addEventListener('keyup', handleReleasingKey, true);
+
+  // ウィンドウのフォーカス外れ等でkeyupを取りこぼした場合のフォールバック解除
+  fallbackTimeout = setTimeout(() => {
+    document.removeEventListener('keydown', handleReleasingKey, true);
+    document.removeEventListener('keyup', handleReleasingKey, true);
+  }, 2000);
+}
+
 // デイリー制限オーバーレイ表示中のキー入力ハンドラ
 function handleBlockKeydown(e) {
-  const isSpace = e.code === 'Space' || e.key === ' ' || e.keyCode === 32;
-  if (isSpace) {
-    // スペースキーによる裏動画の再生やスクロールを抑止
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
+  // ブラウザのショートカット（Cmd+..., Ctrl+..., Alt+...）は除外
+  if (e.metaKey || e.ctrlKey || e.altKey) {
+    return;
   }
+  // 背後動画の再生やスクロールキー（Space, 矢印キー, PageUp/Downなど）を完全に遮断
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
 }
 
 // デイリー制限オーバーレイの表示
@@ -282,8 +308,24 @@ function removeBlockOverlay() {
 
 // 休憩オーバーレイ表示中のキー入力ハンドラ
 function handleBreakKeydown(e) {
+  // ブラウザのショートカット（Cmd+..., Ctrl+..., Alt+...）は除外
+  if (e.metaKey || e.ctrlKey || e.altKey) {
+    return;
+  }
+
+  const btn = document.getElementById('ybr-resume-btn');
+  const isCountingDown = btn && btn.disabled;
+
   const isSpace = e.code === 'Space' || e.key === ' ' || e.keyCode === 32;
   const isEnter = e.code === 'Enter' || e.key === 'Enter' || e.keyCode === 13;
+
+  if (isCountingDown) {
+    // カウントダウン中は動画操作やスクロールを防ぐためキー入力を遮断
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    return;
+  }
 
   if (isSpace || isEnter) {
     // YouTubeのデフォルトショートカットやスクロール、二重発火を防止
@@ -292,8 +334,9 @@ function handleBreakKeydown(e) {
     e.stopImmediatePropagation();
 
     // カウントダウンが終了し、ボタンが活性化している場合のみ再開
-    const btn = document.getElementById('ybr-resume-btn');
     if (btn && !btn.disabled) {
+      // SpaceまたはEnterの長押し（repeat）が解除後に漏れないよう、keyupまでガード
+      blockKeyUntilRelease(e.code || e.key);
       resumeFromBreak();
     }
   }
@@ -477,6 +520,7 @@ if (typeof module !== 'undefined') {
     removeBreakOverlay,
     showBlockOverlay,
     removeBlockOverlay,
+    blockKeyUntilRelease,
     formatTime
   };
 }

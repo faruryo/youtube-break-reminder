@@ -7,6 +7,7 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.useFakeTimers();
     elementsMap = new Map();
 
     mockPlay = jest.fn().mockResolvedValue(undefined);
@@ -92,6 +93,10 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
     });
   });
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   describe('handleBreakKeydown()', () => {
     it('should consume event and resume when Space is pressed and button is enabled', () => {
       const overlay = document.createElement('div');
@@ -174,7 +179,31 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
       expect(global.chrome.runtime.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('should ignore other keys (e.g. KeyA)', () => {
+    it('should block scroll keys like ArrowDown during countdown', () => {
+      const overlay = document.createElement('div');
+      overlay.id = 'yt-break-reminder-break-overlay';
+      const btn = document.createElement('button');
+      btn.id = 'ybr-resume-btn';
+      btn.disabled = true;
+      overlay.appendChild(btn);
+      document.body.appendChild(overlay);
+
+      const event = {
+        code: 'ArrowDown',
+        key: 'ArrowDown',
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+
+      content.handleBreakKeydown(event);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(event.stopPropagation).toHaveBeenCalled();
+      expect(event.stopImmediatePropagation).toHaveBeenCalled();
+    });
+
+    it('should ignore other keys (e.g. KeyA) after countdown', () => {
       const overlay = document.createElement('div');
       overlay.id = 'yt-break-reminder-break-overlay';
       const btn = document.createElement('button');
@@ -196,37 +225,102 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
       expect(event.preventDefault).not.toHaveBeenCalled();
       expect(document.getElementById('yt-break-reminder-break-overlay')).not.toBeNull();
     });
+
+    it('should allow browser shortcuts with meta/ctrl/alt key', () => {
+      const event = {
+        code: 'KeyR',
+        key: 'r',
+        metaKey: true,
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+
+      content.handleBreakKeydown(event);
+      expect(event.preventDefault).not.toHaveBeenCalled();
+    });
   });
 
   describe('handleBlockKeydown()', () => {
-    it('should block Space key during daily limit block overlay', () => {
-      const event = {
+    it('should block Space and scroll keys (ArrowDown, PageDown) during daily limit block overlay', () => {
+      const spaceEvent = {
         code: 'Space',
         key: ' ',
         preventDefault: jest.fn(),
         stopPropagation: jest.fn(),
         stopImmediatePropagation: jest.fn()
       };
+      content.handleBlockKeydown(spaceEvent);
+      expect(spaceEvent.preventDefault).toHaveBeenCalled();
+      expect(spaceEvent.stopPropagation).toHaveBeenCalled();
+      expect(spaceEvent.stopImmediatePropagation).toHaveBeenCalled();
 
-      content.handleBlockKeydown(event);
-
-      expect(event.preventDefault).toHaveBeenCalled();
-      expect(event.stopPropagation).toHaveBeenCalled();
-      expect(event.stopImmediatePropagation).toHaveBeenCalled();
+      const arrowEvent = {
+        code: 'ArrowDown',
+        key: 'ArrowDown',
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+      content.handleBlockKeydown(arrowEvent);
+      expect(arrowEvent.preventDefault).toHaveBeenCalled();
+      expect(arrowEvent.stopPropagation).toHaveBeenCalled();
+      expect(arrowEvent.stopImmediatePropagation).toHaveBeenCalled();
     });
 
-    it('should not block non-space keys in daily limit overlay', () => {
+    it('should allow browser shortcuts (Cmd/Ctrl) during daily limit overlay', () => {
       const event = {
-        code: 'KeyB',
-        key: 'b',
+        code: 'KeyW',
+        key: 'w',
+        metaKey: true,
         preventDefault: jest.fn(),
         stopPropagation: jest.fn(),
         stopImmediatePropagation: jest.fn()
       };
 
       content.handleBlockKeydown(event);
-
       expect(event.preventDefault).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('blockKeyUntilRelease()', () => {
+    it('should block repeat keydown until keyup occurs', () => {
+      let keydownListener;
+      let keyupListener;
+      document.addEventListener.mockImplementation((type, fn) => {
+        if (type === 'keydown') keydownListener = fn;
+        if (type === 'keyup') keyupListener = fn;
+      });
+
+      content.blockKeyUntilRelease('Space');
+
+      expect(keydownListener).toBeDefined();
+      expect(keyupListener).toBeDefined();
+
+      // Test repeat keydown
+      const repeatEvent = {
+        code: 'Space',
+        type: 'keydown',
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+      keydownListener(repeatEvent);
+      expect(repeatEvent.preventDefault).toHaveBeenCalled();
+      expect(repeatEvent.stopPropagation).toHaveBeenCalled();
+
+      // Test keyup release
+      const releaseEvent = {
+        code: 'Space',
+        type: 'keyup',
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+      keyupListener(releaseEvent);
+      expect(releaseEvent.preventDefault).toHaveBeenCalled();
+      expect(document.removeEventListener).toHaveBeenCalledWith('keydown', keydownListener, true);
+      expect(document.removeEventListener).toHaveBeenCalledWith('keyup', keyupListener, true);
     });
   });
 
