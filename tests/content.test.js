@@ -283,6 +283,37 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
       expect(document.getElementById('yt-break-reminder-break-overlay')).not.toBeNull();
     });
 
+    it('should keep blocking scroll, media, and navigation keys after countdown until overlay closes', () => {
+      const overlay = document.createElement('div');
+      overlay.id = 'yt-break-reminder-break-overlay';
+      const btn = document.createElement('button');
+      btn.id = 'ybr-resume-btn';
+      btn.disabled = false;
+      overlay.appendChild(btn);
+      document.body.appendChild(overlay);
+
+      const arrowDownEvent = {
+        code: 'ArrowDown',
+        key: 'ArrowDown',
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+      content.handleBreakKeydown(arrowDownEvent);
+      expect(arrowDownEvent.preventDefault).toHaveBeenCalled();
+      expect(document.getElementById('yt-break-reminder-break-overlay')).not.toBeNull();
+
+      const mediaEvent = {
+        code: 'MediaPlayPause',
+        key: 'MediaPlayPause',
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+      content.handleBreakKeydown(mediaEvent);
+      expect(mediaEvent.preventDefault).toHaveBeenCalled();
+    });
+
     it('should allow browser shortcuts with meta/ctrl/alt key', () => {
       const event = {
         code: 'KeyR',

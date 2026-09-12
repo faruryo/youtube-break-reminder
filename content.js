@@ -367,6 +367,7 @@ function handleBreakKeydown(e) {
     return;
   }
 
+  // カウントダウン終了後: Space または Enter による再開
   if (isSpace || isEnter) {
     // ブラウザの修飾キー付き操作（Cmd+Spaceなど）は再開トリガーにしない
     if (e.metaKey || e.ctrlKey || e.altKey) {
@@ -378,12 +379,19 @@ function handleBreakKeydown(e) {
     e.stopPropagation();
     e.stopImmediatePropagation();
 
-    // カウントダウンが終了し、ボタンが活性化している場合のみ再開
     if (btn && !btn.disabled) {
       // SpaceまたはEnterの長押し（repeat）が解除後に漏れないよう、keyupまたはblurまでガード
       blockKeyUntilRelease(e.code, e.key);
       resumeFromBreak();
     }
+    return;
+  }
+
+  // カウントダウン終了後も、オーバーレイ表示中はスクロール・メディアキーを遮断
+  if (isScrollOrMediaKey(e)) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
   }
 }
 
