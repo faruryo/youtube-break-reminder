@@ -223,38 +223,61 @@ function checkIntervalBreak() {
   }
 }
 
-// キーの長押し（repeat）が解除後に漏れてスクロールや意図しない再生を起こさないよう、keyupまで一時遮断
+// スクロールおよびメディア操作に関わるキー
+const SCROLL_AND_MEDIA_KEYS = new Set([
+  'Space', ' ',
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'PageUp', 'PageDown', 'Home', 'End'
+]);
+
+function isScrollOrMediaKey(e) {
+  return SCROLL_AND_MEDIA_KEYS.has(e.code) || SCROLL_AND_MEDIA_KEYS.has(e.key);
+}
+
+// キーの長押し（repeat）が解除後に漏れてスクロールや意図しない再生を起こさないよう、keyupまたはblurまで遮断
 function blockKeyUntilRelease(releasedKeyCode) {
-  let fallbackTimeout = null;
+  const cleanup = () => {
+    document.removeEventListener('keydown', handleReleasingKey, true);
+    document.removeEventListener('keyup', handleReleasingKey, true);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('blur', cleanup);
+    }
+  };
+
   const handleReleasingKey = (e) => {
     if (e.code === releasedKeyCode || e.key === releasedKeyCode) {
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
       if (e.type === 'keyup') {
-        if (fallbackTimeout) clearTimeout(fallbackTimeout);
-        document.removeEventListener('keydown', handleReleasingKey, true);
-        document.removeEventListener('keyup', handleReleasingKey, true);
+        cleanup();
       }
     }
   };
+
   document.addEventListener('keydown', handleReleasingKey, true);
   document.addEventListener('keyup', handleReleasingKey, true);
-
-  // ウィンドウのフォーカス外れ等でkeyupを取りこぼした場合のフォールバック解除
-  fallbackTimeout = setTimeout(() => {
-    document.removeEventListener('keydown', handleReleasingKey, true);
-    document.removeEventListener('keyup', handleReleasingKey, true);
-  }, 2000);
+  if (typeof window !== 'undefined') {
+    window.addEventListener('blur', cleanup, { once: true });
+  }
 }
 
 // デイリー制限オーバーレイ表示中のキー入力ハンドラ
 function handleBlockKeydown(e) {
+  // スクロール・メディア操作キーは修飾キー（Ctrl+Homeなど）が付いていても確実に遮断
+  if (isScrollOrMediaKey(e)) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    return;
+  }
+
   // ブラウザのショートカット（Cmd+..., Ctrl+..., Alt+...）は除外
   if (e.metaKey || e.ctrlKey || e.altKey) {
     return;
   }
-  // 背後動画の再生やスクロールキー（Space, 矢印キー, PageUp/Downなど）を完全に遮断
+
+  // 背後へのキー入力を遮断
   e.preventDefault();
   e.stopPropagation();
   e.stopImmediatePropagation();
@@ -308,11 +331,6 @@ function removeBlockOverlay() {
 
 // 休憩オーバーレイ表示中のキー入力ハンドラ
 function handleBreakKeydown(e) {
-  // ブラウザのショートカット（Cmd+..., Ctrl+..., Alt+...）は除外
-  if (e.metaKey || e.ctrlKey || e.altKey) {
-    return;
-  }
-
   const btn = document.getElementById('ybr-resume-btn');
   const isCountingDown = btn && btn.disabled;
 
@@ -320,6 +338,19 @@ function handleBreakKeydown(e) {
   const isEnter = e.code === 'Enter' || e.key === 'Enter' || e.keyCode === 13;
 
   if (isCountingDown) {
+    // スクロールキーは修飾キー付き（Shift+Space, Ctrl+Home等）でも遮断
+    if (isScrollOrMediaKey(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      return;
+    }
+
+    // ブラウザショートカットは許可
+    if (e.metaKey || e.ctrlKey || e.altKey) {
+      return;
+    }
+
     // カウントダウン中は動画操作やスクロールを防ぐためキー入力を遮断
     e.preventDefault();
     e.stopPropagation();
@@ -328,6 +359,11 @@ function handleBreakKeydown(e) {
   }
 
   if (isSpace || isEnter) {
+    // ブラウザの修飾キー付き操作（Cmd+Spaceなど）は再開トリガーにしない
+    if (e.metaKey || e.ctrlKey || e.altKey) {
+      return;
+    }
+
     // YouTubeのデフォルトショートカットやスクロール、二重発火を防止
     e.preventDefault();
     e.stopPropagation();
@@ -335,7 +371,7 @@ function handleBreakKeydown(e) {
 
     // カウントダウンが終了し、ボタンが活性化している場合のみ再開
     if (btn && !btn.disabled) {
-      // SpaceまたはEnterの長押し（repeat）が解除後に漏れないよう、keyupまでガード
+      // SpaceまたはEnterの長押し（repeat）が解除後に漏れないよう、keyupまたはblurまでガード
       blockKeyUntilRelease(e.code || e.key);
       resumeFromBreak();
     }
@@ -521,6 +557,7 @@ if (typeof module !== 'undefined') {
     showBlockOverlay,
     removeBlockOverlay,
     blockKeyUntilRelease,
+    isScrollOrMediaKey,
     formatTime
   };
 }
