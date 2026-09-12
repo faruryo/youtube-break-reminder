@@ -431,13 +431,10 @@ function showBreakOverlay() {
   if (isBreakShowing) return;
   isBreakShowing = true;
 
-  // 休憩に入る直前に動画が再生中だったか、または視聴ページにいるかを記録
-  const isPlaying = isVideoPlaying();
-  const isWatchPage = typeof window !== 'undefined' && window.location && window.location.pathname === '/watch';
-  shouldResumeVideo = isPlaying || isWatchPage;
-
   // 休憩開始時に再生中だった動画要素を保持して一時停止
   pausedVideosToResume = pauseAllVideos();
+  // 休憩開始時に実際に動画が再生中だった場合のみ、解除時に再開する
+  shouldResumeVideo = pausedVideosToResume.length > 0;
 
   // 入力欄等にフォーカスが残っていれば外す
   if (document.activeElement && typeof document.activeElement.blur === 'function') {

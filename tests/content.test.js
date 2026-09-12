@@ -618,6 +618,33 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
       expect(fallbackMainVideo.play).toHaveBeenCalled();
     });
 
+    it('should NOT resume playback when video was already paused before break on /watch page', () => {
+      const pausedVideo = {
+        className: 'html5-main-video',
+        paused: true,
+        pause: jest.fn(),
+        play: jest.fn().mockResolvedValue(undefined)
+      };
+
+      global.document.querySelectorAll = jest.fn((sel) => {
+        if (sel === 'video') return [pausedVideo];
+        return [];
+      });
+      global.document.querySelector = jest.fn((sel) => {
+        if (sel === 'video.html5-main-video') return pausedVideo;
+        return null;
+      });
+
+      // Break triggered while video was paused on /watch
+      content.showBreakOverlay();
+
+      expect(pausedVideo.pause).not.toHaveBeenCalled();
+
+      content.resumeFromBreak();
+
+      expect(pausedVideo.play).not.toHaveBeenCalled();
+    });
+
     it('should trigger play on video.html5-main-video if present and no tracked elements', () => {
       content.resumeVideos();
       expect(mockPlay).toHaveBeenCalled();
