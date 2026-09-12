@@ -331,6 +331,28 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
       };
       content.handleBlockKeydown(ctrlMediaEvent);
       expect(ctrlMediaEvent.preventDefault).toHaveBeenCalled();
+
+      const ctrlMediaPlayEvent = {
+        code: 'MediaPlay',
+        key: 'MediaPlay',
+        ctrlKey: true,
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+      content.handleBlockKeydown(ctrlMediaPlayEvent);
+      expect(ctrlMediaPlayEvent.preventDefault).toHaveBeenCalled();
+
+      const ctrlFastForwardEvent = {
+        code: 'MediaFastForward',
+        key: 'MediaFastForward',
+        ctrlKey: true,
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+      content.handleBlockKeydown(ctrlFastForwardEvent);
+      expect(ctrlFastForwardEvent.preventDefault).toHaveBeenCalled();
     });
 
     it('should allow browser shortcuts (Cmd/Ctrl) for non-scroll keys during daily limit overlay', () => {
@@ -345,6 +367,32 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
 
       content.handleBlockKeydown(event);
       expect(event.preventDefault).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('isScrollOrMediaKey()', () => {
+    it('should return true for predefined scroll and media keys', () => {
+      expect(content.isScrollOrMediaKey({ code: 'Space' })).toBe(true);
+      expect(content.isScrollOrMediaKey({ key: ' ' })).toBe(true);
+      expect(content.isScrollOrMediaKey({ code: 'ArrowDown' })).toBe(true);
+      expect(content.isScrollOrMediaKey({ key: 'PageUp' })).toBe(true);
+      expect(content.isScrollOrMediaKey({ code: 'MediaPlayPause' })).toBe(true);
+    });
+
+    it('should return true for any key or code prefixed with Media or Audio', () => {
+      expect(content.isScrollOrMediaKey({ code: 'MediaPlay' })).toBe(true);
+      expect(content.isScrollOrMediaKey({ key: 'MediaPause' })).toBe(true);
+      expect(content.isScrollOrMediaKey({ code: 'MediaFastForward' })).toBe(true);
+      expect(content.isScrollOrMediaKey({ code: 'MediaRewind' })).toBe(true);
+      expect(content.isScrollOrMediaKey({ code: 'AudioVolumeUp' })).toBe(true);
+      expect(content.isScrollOrMediaKey({ key: 'AudioVolumeMute' })).toBe(true);
+    });
+
+    it('should return false for regular alphanumeric and navigation keys', () => {
+      expect(content.isScrollOrMediaKey({ code: 'KeyA', key: 'a' })).toBe(false);
+      expect(content.isScrollOrMediaKey({ code: 'Enter', key: 'Enter' })).toBe(false);
+      expect(content.isScrollOrMediaKey({ code: 'Tab', key: 'Tab' })).toBe(false);
+      expect(content.isScrollOrMediaKey(null)).toBe(false);
     });
   });
 

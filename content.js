@@ -232,7 +232,13 @@ const SCROLL_AND_MEDIA_KEYS = new Set([
 ]);
 
 function isScrollOrMediaKey(e) {
-  return SCROLL_AND_MEDIA_KEYS.has(e.code) || SCROLL_AND_MEDIA_KEYS.has(e.key);
+  if (!e) return false;
+  if (SCROLL_AND_MEDIA_KEYS.has(e.code) || SCROLL_AND_MEDIA_KEYS.has(e.key)) {
+    return true;
+  }
+  const code = e.code || '';
+  const key = e.key || '';
+  return code.startsWith('Media') || key.startsWith('Media') || code.startsWith('Audio') || key.startsWith('Audio');
 }
 
 // キーの長押し（repeat）が解除後に漏れてスクロールや意図しない再生を起こさないよう、keyupまたはblurまで遮断
