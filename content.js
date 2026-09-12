@@ -227,7 +227,8 @@ function checkIntervalBreak() {
 const SCROLL_AND_MEDIA_KEYS = new Set([
   'Space', ' ',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-  'PageUp', 'PageDown', 'Home', 'End'
+  'PageUp', 'PageDown', 'Home', 'End',
+  'MediaPlayPause', 'MediaTrackNext', 'MediaTrackPrevious', 'MediaStop'
 ]);
 
 function isScrollOrMediaKey(e) {
@@ -235,7 +236,7 @@ function isScrollOrMediaKey(e) {
 }
 
 // キーの長押し（repeat）が解除後に漏れてスクロールや意図しない再生を起こさないよう、keyupまたはblurまで遮断
-function blockKeyUntilRelease(releasedKeyCode) {
+function blockKeyUntilRelease(releasedCode, releasedKey) {
   const cleanup = () => {
     document.removeEventListener('keydown', handleReleasingKey, true);
     document.removeEventListener('keyup', handleReleasingKey, true);
@@ -245,7 +246,9 @@ function blockKeyUntilRelease(releasedKeyCode) {
   };
 
   const handleReleasingKey = (e) => {
-    if (e.code === releasedKeyCode || e.key === releasedKeyCode) {
+    // codeが存在する場合は物理キー(Enter vs NumpadEnter等)で厳密に照合
+    const matches = releasedCode ? e.code === releasedCode : (releasedKey && e.key === releasedKey);
+    if (matches) {
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
@@ -372,7 +375,7 @@ function handleBreakKeydown(e) {
     // カウントダウンが終了し、ボタンが活性化している場合のみ再開
     if (btn && !btn.disabled) {
       // SpaceまたはEnterの長押し（repeat）が解除後に漏れないよう、keyupまたはblurまでガード
-      blockKeyUntilRelease(e.code || e.key);
+      blockKeyUntilRelease(e.code, e.key);
       resumeFromBreak();
     }
   }

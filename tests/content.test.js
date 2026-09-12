@@ -320,6 +320,17 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
       };
       content.handleBlockKeydown(ctrlHomeEvent);
       expect(ctrlHomeEvent.preventDefault).toHaveBeenCalled();
+
+      const ctrlMediaEvent = {
+        code: 'MediaPlayPause',
+        key: 'MediaPlayPause',
+        ctrlKey: true,
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+      content.handleBlockKeydown(ctrlMediaEvent);
+      expect(ctrlMediaEvent.preventDefault).toHaveBeenCalled();
     });
 
     it('should allow browser shortcuts (Cmd/Ctrl) for non-scroll keys during daily limit overlay', () => {
@@ -346,7 +357,7 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
         if (type === 'keyup') keyupListener = fn;
       });
 
-      content.blockKeyUntilRelease('Space');
+      content.blockKeyUntilRelease('Space', ' ');
 
       expect(keydownListener).toBeDefined();
       expect(keyupListener).toBeDefined();
@@ -380,6 +391,58 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
       expect(document.removeEventListener).toHaveBeenCalledWith('keyup', keyupListener, true);
     });
 
+    it('should NOT release Enter guard when NumpadEnter keyup occurs', () => {
+      let keydownListener;
+      let keyupListener;
+      document.addEventListener.mockImplementation((type, fn) => {
+        if (type === 'keydown') keydownListener = fn;
+        if (type === 'keyup') keyupListener = fn;
+      });
+
+      // Guard initiated by standard Enter (code: Enter, key: Enter)
+      content.blockKeyUntilRelease('Enter', 'Enter');
+
+      // NumpadEnter keyup (code: NumpadEnter, key: Enter) occurs
+      const numpadReleaseEvent = {
+        code: 'NumpadEnter',
+        key: 'Enter',
+        type: 'keyup',
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+      keyupListener(numpadReleaseEvent);
+
+      // Should NOT have removed listeners
+      expect(document.removeEventListener).not.toHaveBeenCalled();
+
+      // Standard Enter keydown repeat should still be blocked
+      const enterRepeatEvent = {
+        code: 'Enter',
+        key: 'Enter',
+        type: 'keydown',
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+      keydownListener(enterRepeatEvent);
+      expect(enterRepeatEvent.preventDefault).toHaveBeenCalled();
+
+      // Finally, standard Enter keyup releases the guard
+      const enterReleaseEvent = {
+        code: 'Enter',
+        key: 'Enter',
+        type: 'keyup',
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+      keyupListener(enterReleaseEvent);
+      expect(enterReleaseEvent.preventDefault).toHaveBeenCalled();
+      expect(document.removeEventListener).toHaveBeenCalledWith('keydown', keydownListener, true);
+      expect(document.removeEventListener).toHaveBeenCalledWith('keyup', keyupListener, true);
+    });
+
     it('should release listeners when window blur occurs', () => {
       let blurListener;
       let keydownListener;
@@ -392,7 +455,7 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
         if (type === 'blur') blurListener = fn;
       });
 
-      content.blockKeyUntilRelease('Space');
+      content.blockKeyUntilRelease('Space', ' ');
 
       expect(blurListener).toBeDefined();
       blurListener();
