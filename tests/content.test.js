@@ -82,6 +82,7 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
         }
         return [];
       }),
+      contains: jest.fn(() => true),
       body: {
         appendChild: jest.fn((el) => {
           if (el.id) elementsMap.set(el.id, el);
@@ -544,8 +545,80 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
     });
   });
 
-  describe('resumeVideos()', () => {
-    it('should trigger play on video.html5-main-video if present', () => {
+  describe('pauseAllVideos() and resumeVideos() on multi-video pages', () => {
+    it('should pause only playing videos and return them', () => {
+      const video1 = { paused: true, pause: jest.fn(), play: jest.fn().mockResolvedValue(undefined) };
+      const video2 = { paused: false, pause: jest.fn(), play: jest.fn().mockResolvedValue(undefined) };
+      const video3 = { paused: false, pause: jest.fn(), play: jest.fn().mockResolvedValue(undefined) };
+
+      global.document.querySelectorAll = jest.fn((sel) => {
+        if (sel === 'video') return [video1, video2, video3];
+        return [];
+      });
+
+      const pausedList = content.pauseAllVideos();
+      expect(video1.pause).not.toHaveBeenCalled();
+      expect(video2.pause).toHaveBeenCalled();
+      expect(video3.pause).toHaveBeenCalled();
+      expect(pausedList).toEqual([video2, video3]);
+    });
+
+    it('should resume only the videos that were actually playing and paused when break began', () => {
+      const video1 = { paused: true, pause: jest.fn(), play: jest.fn().mockResolvedValue(undefined) };
+      const video2 = { paused: false, pause: jest.fn(() => { video2.paused = true; }), play: jest.fn().mockResolvedValue(undefined) };
+
+      global.document.querySelectorAll = jest.fn((sel) => {
+        if (sel === 'video') return [video1, video2];
+        return [];
+      });
+
+      // Break overlay triggered
+      content.showBreakOverlay();
+
+      expect(video1.pause).not.toHaveBeenCalled();
+      expect(video2.pause).toHaveBeenCalled();
+
+      // Resume from break
+      content.resumeFromBreak();
+
+      expect(video1.play).not.toHaveBeenCalled();
+      expect(video2.play).toHaveBeenCalled();
+    });
+
+    it('should fallback to document querySelector for main video if paused videos were disconnected', () => {
+      const disconnectedVideo = {
+        paused: true,
+        pause: jest.fn(),
+        play: jest.fn().mockResolvedValue(undefined)
+      };
+
+      global.document.querySelectorAll = jest.fn((sel) => {
+        if (sel === 'video') return [disconnectedVideo];
+        return [];
+      });
+      global.document.contains = jest.fn((el) => el !== disconnectedVideo);
+
+      const fallbackMainVideo = {
+        className: 'html5-main-video',
+        paused: true,
+        play: jest.fn().mockResolvedValue(undefined)
+      };
+      global.document.querySelector = jest.fn((sel) => {
+        if (sel === 'video.html5-main-video') return fallbackMainVideo;
+        return null;
+      });
+
+      disconnectedVideo.paused = false;
+      content.showBreakOverlay();
+      disconnectedVideo.paused = true;
+
+      content.resumeFromBreak();
+
+      expect(disconnectedVideo.play).not.toHaveBeenCalled();
+      expect(fallbackMainVideo.play).toHaveBeenCalled();
+    });
+
+    it('should trigger play on video.html5-main-video if present and no tracked elements', () => {
       content.resumeVideos();
       expect(mockPlay).toHaveBeenCalled();
     });

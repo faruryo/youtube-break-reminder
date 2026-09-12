@@ -9,6 +9,7 @@ let isBreakShowing = false;
 let isDebugEnabled = false;
 
 let shouldResumeVideo = false;
+let pausedVideosToResume = [];
 let breakCountdownInterval = null;
 let breakKeydownListener = null;
 let breakClickListener = null;
@@ -189,20 +190,40 @@ function startHeartbeat() {
 // 動画の一時停止
 function pauseAllVideos() {
   const videos = document.querySelectorAll('video');
+  const paused = [];
   videos.forEach(video => {
     if (!video.paused) {
       video.pause();
+      paused.push(video);
     }
   });
+  return paused;
 }
 
 // 動画の自動再生
 function resumeVideos() {
-  const mainVideo = document.querySelector('video.html5-main-video') || document.querySelector('video');
-  if (mainVideo) {
-    mainVideo.play().catch(err => {
-      console.warn('Failed to auto-play video:', err);
+  let resumed = false;
+  if (pausedVideosToResume && pausedVideosToResume.length > 0) {
+    pausedVideosToResume.forEach(video => {
+      const isConnected = typeof document.contains === 'function' ? document.contains(video) : true;
+      if (isConnected && video.paused) {
+        video.play().catch(err => {
+          console.warn('Failed to auto-play video:', err);
+        });
+        resumed = true;
+      }
     });
+    pausedVideosToResume = [];
+  }
+
+  // 記録されていた要素が再開されなかった（または記録が空だった）場合のフォールバック
+  if (!resumed) {
+    const mainVideo = document.querySelector('video.html5-main-video') || document.querySelector('video');
+    if (mainVideo && mainVideo.paused) {
+      mainVideo.play().catch(err => {
+        console.warn('Failed to auto-play video:', err);
+      });
+    }
   }
 }
 
@@ -400,6 +421,8 @@ function resumeFromBreak() {
   removeBreakOverlay();
   if (shouldResumeVideo) {
     resumeVideos();
+  } else {
+    pausedVideosToResume = [];
   }
 }
 
@@ -409,9 +432,12 @@ function showBreakOverlay() {
   isBreakShowing = true;
 
   // 休憩に入る直前に動画が再生中だったか、または視聴ページにいるかを記録
-  shouldResumeVideo = isVideoPlaying() || window.location.pathname === '/watch';
+  const isPlaying = isVideoPlaying();
+  const isWatchPage = typeof window !== 'undefined' && window.location && window.location.pathname === '/watch';
+  shouldResumeVideo = isPlaying || isWatchPage;
 
-  pauseAllVideos();
+  // 休憩開始時に再生中だった動画要素を保持して一時停止
+  pausedVideosToResume = pauseAllVideos();
 
   // 入力欄等にフォーカスが残っていれば外す
   if (document.activeElement && typeof document.activeElement.blur === 'function') {
