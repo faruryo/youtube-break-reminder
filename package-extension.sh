@@ -29,6 +29,7 @@ zip -r "$OUTPUT" . \
   -x ".DS_Store" \
   -x "Thumbs.db" \
   -x "*.sh" \
-  -x "store-assets/*"
+  -x "store-assets/*" \
+  -x "scripts/*"
 
 echo "✅ Packaged successfully: $OUTPUT ($(du -h "$OUTPUT" | cut -f1))"
