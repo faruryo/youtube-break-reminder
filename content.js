@@ -8,6 +8,13 @@ let isBlocked = false;
 let isBreakShowing = false;
 let isDebugEnabled = false;
 
+let shouldResumeVideo = false;
+let pausedVideosToResume = [];
+let breakCountdownInterval = null;
+let breakKeydownListener = null;
+let breakClickListener = null;
+let blockKeydownListener = null;
+
 // ユーザーのアクティビティを監視するための変数
 let lastInteractionTime = Date.now();
 
@@ -183,11 +190,41 @@ function startHeartbeat() {
 // 動画の一時停止
 function pauseAllVideos() {
   const videos = document.querySelectorAll('video');
+  const paused = [];
   videos.forEach(video => {
     if (!video.paused) {
       video.pause();
+      paused.push(video);
     }
   });
+  return paused;
+}
+
+// 動画の自動再生
+function resumeVideos() {
+  let resumed = false;
+  if (pausedVideosToResume && pausedVideosToResume.length > 0) {
+    pausedVideosToResume.forEach(video => {
+      const isConnected = typeof document.contains === 'function' ? document.contains(video) : true;
+      if (isConnected && video.paused) {
+        video.play().catch(err => {
+          console.warn('Failed to auto-play video:', err);
+        });
+        resumed = true;
+      }
+    });
+    pausedVideosToResume = [];
+  }
+
+  // 記録されていた要素が再開されなかった（または記録が空だった）場合のフォールバック
+  if (!resumed) {
+    const mainVideo = document.querySelector('video.html5-main-video') || document.querySelector('video');
+    if (mainVideo && mainVideo.paused) {
+      mainVideo.play().catch(err => {
+        console.warn('Failed to auto-play video:', err);
+      });
+    }
+  }
 }
 
 // デイリー制限のチェック
@@ -205,6 +242,75 @@ function checkIntervalBreak() {
   if (continuousSeconds >= breakIntervalSeconds) {
     showBreakOverlay();
   }
+}
+
+// スクロールおよびメディア操作に関わるキー
+const SCROLL_AND_MEDIA_KEYS = new Set([
+  'Space', ' ',
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'PageUp', 'PageDown', 'Home', 'End',
+  'MediaPlayPause', 'MediaTrackNext', 'MediaTrackPrevious', 'MediaStop'
+]);
+
+function isScrollOrMediaKey(e) {
+  if (!e) return false;
+  if (SCROLL_AND_MEDIA_KEYS.has(e.code) || SCROLL_AND_MEDIA_KEYS.has(e.key)) {
+    return true;
+  }
+  const code = e.code || '';
+  const key = e.key || '';
+  return code.startsWith('Media') || key.startsWith('Media') || code.startsWith('Audio') || key.startsWith('Audio');
+}
+
+// キーの長押し（repeat）が解除後に漏れてスクロールや意図しない再生を起こさないよう、keyupまたはblurまで遮断
+function blockKeyUntilRelease(releasedCode, releasedKey) {
+  const cleanup = () => {
+    document.removeEventListener('keydown', handleReleasingKey, true);
+    document.removeEventListener('keyup', handleReleasingKey, true);
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('blur', cleanup);
+    }
+  };
+
+  const handleReleasingKey = (e) => {
+    // codeが存在する場合は物理キー(Enter vs NumpadEnter等)で厳密に照合
+    const matches = releasedCode ? e.code === releasedCode : (releasedKey && e.key === releasedKey);
+    if (matches) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      if (e.type === 'keyup') {
+        cleanup();
+      }
+    }
+  };
+
+  document.addEventListener('keydown', handleReleasingKey, true);
+  document.addEventListener('keyup', handleReleasingKey, true);
+  if (typeof window !== 'undefined') {
+    window.addEventListener('blur', cleanup, { once: true });
+  }
+}
+
+// デイリー制限オーバーレイ表示中のキー入力ハンドラ
+function handleBlockKeydown(e) {
+  // スクロール・メディア操作キーは修飾キー（Ctrl+Homeなど）が付いていても確実に遮断
+  if (isScrollOrMediaKey(e)) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    return;
+  }
+
+  // ブラウザのショートカット（Cmd+..., Ctrl+..., Alt+...）は除外
+  if (e.metaKey || e.ctrlKey || e.altKey) {
+    return;
+  }
+
+  // 背後へのキー入力を遮断
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
 }
 
 // デイリー制限オーバーレイの表示
@@ -233,27 +339,114 @@ function showBlockOverlay() {
   
   // 動画が裏で再生されるのを防止し続ける
   preventVideoPlayback();
+
+  // キーボードイベントの登録（Spaceキー等による裏動画再生・スクロール抑止）
+  if (blockKeydownListener) {
+    document.removeEventListener('keydown', blockKeydownListener, true);
+  }
+  blockKeydownListener = handleBlockKeydown;
+  document.addEventListener('keydown', blockKeydownListener, true);
 }
 
 // デイリー制限オーバーレイの削除
 function removeBlockOverlay() {
+  if (blockKeydownListener) {
+    document.removeEventListener('keydown', blockKeydownListener, true);
+    blockKeydownListener = null;
+  }
   const overlay = document.getElementById('yt-break-reminder-block-overlay');
   if (overlay) overlay.remove();
   isBlocked = false;
+}
+
+// 休憩オーバーレイ表示中のキー入力ハンドラ
+function handleBreakKeydown(e) {
+  const btn = document.getElementById('ybr-resume-btn');
+  const isCountingDown = btn && btn.disabled;
+
+  const isSpace = e.code === 'Space' || e.key === ' ' || e.keyCode === 32;
+  const isEnter = e.code === 'Enter' || e.key === 'Enter' || e.keyCode === 13;
+
+  if (isCountingDown) {
+    // スクロールキーは修飾キー付き（Shift+Space, Ctrl+Home等）でも遮断
+    if (isScrollOrMediaKey(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      return;
+    }
+
+    // ブラウザショートカットは許可
+    if (e.metaKey || e.ctrlKey || e.altKey) {
+      return;
+    }
+
+    // カウントダウン中は動画操作やスクロールを防ぐためキー入力を遮断
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    return;
+  }
+
+  // カウントダウン終了後: Space または Enter による再開
+  if (isSpace || isEnter) {
+    // ブラウザの修飾キー付き操作（Cmd+Spaceなど）は再開トリガーにしない
+    if (e.metaKey || e.ctrlKey || e.altKey) {
+      return;
+    }
+
+    // YouTubeのデフォルトショートカットやスクロール、二重発火を防止
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
+    if (btn && !btn.disabled) {
+      // SpaceまたはEnterの長押し（repeat）が解除後に漏れないよう、keyupまたはblurまでガード
+      blockKeyUntilRelease(e.code, e.key);
+      resumeFromBreak();
+    }
+    return;
+  }
+
+  // カウントダウン終了後も、オーバーレイ表示中はスクロール・メディアキーを遮断
+  if (isScrollOrMediaKey(e)) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+  }
+}
+
+// 休憩オーバーレイを解除し、動画再生を再開
+function resumeFromBreak() {
+  removeBreakOverlay();
+  if (shouldResumeVideo) {
+    resumeVideos();
+  } else {
+    pausedVideosToResume = [];
+  }
 }
 
 // 休憩促進オーバーレイの表示
 function showBreakOverlay() {
   if (isBreakShowing) return;
   isBreakShowing = true;
-  pauseAllVideos();
-  
+
+  // 休憩開始時に再生中だった動画要素を保持して一時停止
+  pausedVideosToResume = pauseAllVideos();
+  // 休憩開始時に実際に動画が再生中だった場合のみ、解除時に再開する
+  shouldResumeVideo = pausedVideosToResume.length > 0;
+
+  // 入力欄等にフォーカスが残っていれば外す
+  if (document.activeElement && typeof document.activeElement.blur === 'function') {
+    document.activeElement.blur();
+  }
+
   const overlay = document.createElement('div');
   overlay.id = 'yt-break-reminder-break-overlay';
-  
+
   const cooldownPeriod = 20; // 20秒の強制休憩時間
   let remainingSeconds = cooldownPeriod;
-  
+
   overlay.innerHTML = `
     <div class="ybr-card">
       <div class="ybr-icon">☕</div>
@@ -264,43 +457,70 @@ function showBreakOverlay() {
     </div>
   `;
   document.body.appendChild(overlay);
-  
+
   preventVideoPlayback();
-  
+
   // カウントダウン処理
-  const countdownInterval = setInterval(() => {
+  if (breakCountdownInterval) clearInterval(breakCountdownInterval);
+  breakCountdownInterval = setInterval(() => {
     remainingSeconds--;
     const btn = document.getElementById('ybr-resume-btn');
     if (btn) {
       if (remainingSeconds <= 0) {
-        clearInterval(countdownInterval);
-        btn.textContent = '視聴を再開する';
+        clearInterval(breakCountdownInterval);
+        breakCountdownInterval = null;
+        btn.textContent = '視聴を再開する (Space / Enter)';
         btn.disabled = false;
         btn.classList.add('active');
+        btn.focus();
       } else {
         btn.textContent = `休憩中... (${remainingSeconds}秒)`;
       }
     } else {
-      clearInterval(countdownInterval);
+      clearInterval(breakCountdownInterval);
+      breakCountdownInterval = null;
     }
   }, 1000);
-  
-  // 再開ボタンのイベント
-  document.addEventListener('click', function handleResume(e) {
+
+  // キーボードイベントの登録（キャプチャフェーズ）
+  if (breakKeydownListener) {
+    document.removeEventListener('keydown', breakKeydownListener, true);
+  }
+  breakKeydownListener = handleBreakKeydown;
+  document.addEventListener('keydown', breakKeydownListener, true);
+
+  // 再開ボタンのクリックイベント
+  if (breakClickListener) {
+    document.removeEventListener('click', breakClickListener);
+  }
+  breakClickListener = (e) => {
     if (e.target && e.target.id === 'ybr-resume-btn' && !e.target.disabled) {
-      removeBreakOverlay();
-      document.removeEventListener('click', handleResume);
+      resumeFromBreak();
     }
-  });
+  };
+  document.addEventListener('click', breakClickListener);
 }
 
 // 休憩促進オーバーレイの削除
 function removeBreakOverlay() {
+  if (breakCountdownInterval) {
+    clearInterval(breakCountdownInterval);
+    breakCountdownInterval = null;
+  }
+  if (breakKeydownListener) {
+    document.removeEventListener('keydown', breakKeydownListener, true);
+    breakKeydownListener = null;
+  }
+  if (breakClickListener) {
+    document.removeEventListener('click', breakClickListener);
+    breakClickListener = null;
+  }
+
   const overlay = document.getElementById('yt-break-reminder-break-overlay');
   if (overlay) overlay.remove();
   continuousSeconds = 0;
   isBreakShowing = false;
-  
+
   // バックグラウンド側の連続視聴時間もリセット
   chrome.runtime.sendMessage({ type: 'RESET_CONTINUOUS' });
 }
@@ -357,8 +577,27 @@ function observeOverlayRemoval(elementId) {
 }
 
 // 実行開始
-if (window.location.hostname === 'music.youtube.com') {
-  // YouTube Musicは測定対象外にするため、初期化処理を行わない
-} else {
-  init();
+if (typeof process === 'undefined' || !process.env.JEST_WORKER_ID) {
+  if (typeof window !== 'undefined' && window.location && window.location.hostname === 'music.youtube.com') {
+    // YouTube Musicは測定対象外にするため、初期化処理を行わない
+  } else if (typeof window !== 'undefined') {
+    init();
+  }
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = {
+    handleBreakKeydown,
+    handleBlockKeydown,
+    resumeFromBreak,
+    resumeVideos,
+    pauseAllVideos,
+    showBreakOverlay,
+    removeBreakOverlay,
+    showBlockOverlay,
+    removeBlockOverlay,
+    blockKeyUntilRelease,
+    isScrollOrMediaKey,
+    formatTime
+  };
 }
