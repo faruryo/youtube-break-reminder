@@ -283,6 +283,67 @@ function aggregateMonthlyHistory(dateObj, usageHistory = {}) {
   };
 }
 
+function readInt(raw, fallback) {
+  const n = parseInt(raw, 10);
+  return Number.isNaN(n) ? fallback : n;
+}
+
+function collectBreakMinutes(raw) {
+  return Math.max(5, Math.min(180, readInt(raw, 30)));
+}
+
+function collectResetHour(raw) {
+  return Math.max(0, Math.min(23, readInt(raw, 4)));
+}
+
+function collectLimitSeconds(hoursRaw, minutesRaw) {
+  const hours = Math.max(0, Math.min(23, readInt(hoursRaw, 0)));
+  const minutes = Math.max(0, Math.min(59, readInt(minutesRaw, 0)));
+  const seconds = (hours * 3600) + (minutes * 60);
+  return seconds === 0 ? 60 : seconds;
+}
+
+function fillSettingsInputs(view, data) {
+  const baseLimit = data.limitSeconds !== undefined ? data.limitSeconds : 90 * 60;
+  for (let i = 0; i <= 6; i++) {
+    const val = data[`limitSeconds_${i}`] !== undefined ? data[`limitSeconds_${i}`] : baseLimit;
+    view.limitInputs[`hours_${i}`].value = Math.floor(val / 3600);
+    view.limitInputs[`minutes_${i}`].value = Math.floor((val % 3600) / 60);
+  }
+  const valH = data.limitSeconds_H !== undefined ? data.limitSeconds_H : baseLimit;
+  view.limitInputs.hours_H.value = Math.floor(valH / 3600);
+  view.limitInputs.minutes_H.value = Math.floor((valH % 3600) / 60);
+
+  const breakIntervalSeconds = data.breakIntervalSeconds || 30 * 60;
+  view.breakIntervalInput.value = Math.floor(breakIntervalSeconds / 60);
+  view.resetHourInput.value = data.resetHour !== undefined ? data.resetHour : 4;
+  view.debugEnabledInput.checked = !!data.isDebugEnabled;
+}
+
+function applyStatusView(view, data, fillSettings) {
+  const todaySeconds = data.todaySeconds || 0;
+  const limitSeconds = data.limitSeconds || 90 * 60;
+  const breakIntervalSeconds = data.breakIntervalSeconds || 30 * 60;
+  const continuousSeconds = data.continuousSeconds || 0;
+
+  view.setProgress(Math.min(todaySeconds / limitSeconds, 1));
+  view.currentText.textContent = formatTimeShort(todaySeconds);
+
+  const remaining = limitSeconds - todaySeconds;
+  if (remaining <= 0) {
+    view.remainingText.textContent = '制限時間に達しました';
+    view.remainingText.style.color = 'var(--accent-color)';
+  } else {
+    view.remainingText.textContent = formatTimeLong(remaining);
+    view.remainingText.style.color = '#dca163';
+  }
+
+  const breakRemaining = Math.max(breakIntervalSeconds - continuousSeconds, 0);
+  view.continuousText.textContent = `${formatTimeShort(continuousSeconds)} (休憩まで ${formatTimeShort(breakRemaining)})`;
+
+  if (fillSettings) fillSettingsInputs(view, data);
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   // --- タブ要素 ---
   const tabTimer = document.getElementById('tab-timer');
@@ -356,7 +417,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       tabReport.classList.remove('active');
       timerSection.style.display = 'block';
       reportSection.style.display = 'none';
-      loadStatus();
+      loadTimer();
     } else {
       tabReport.classList.add('active');
       tabTimer.classList.remove('active');
@@ -667,8 +728,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // --- タイマー・設定のロード ---
-  async function loadStatus() {
+  const statusView = {
+    currentText,
+    remainingText,
+    continuousText,
+    breakIntervalInput,
+    resetHourInput,
+    debugEnabledInput,
+    limitInputs,
+    setProgress
+  };
+
+  async function readStatus() {
     const keys = [
       'todaySeconds',
       'limitSeconds',
@@ -681,70 +752,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       keys.push(`limitSeconds_${i}`);
     }
     keys.push('limitSeconds_H');
+    return chrome.storage.local.get(keys);
+  }
 
-    const data = await chrome.storage.local.get(keys);
+  async function loadTimer() {
+    applyStatusView(statusView, await readStatus(), false);
+  }
 
-    const todaySeconds = data.todaySeconds || 0;
-    const limitSeconds = data.limitSeconds || 90 * 60; // デフォルト1.5時間
-    const breakIntervalSeconds = data.breakIntervalSeconds || 30 * 60; // デフォルト30分
-    const continuousSeconds = data.continuousSeconds || 0;
-    const resetHour = data.resetHour !== undefined ? data.resetHour : 4; // デフォルト朝4時
-
-    // 進捗率の計算
-    const progress = Math.min(todaySeconds / limitSeconds, 1);
-    setProgress(progress);
-
-    // テキスト表示の更新
-    currentText.textContent = formatTimeShort(todaySeconds);
-    
-    const remaining = limitSeconds - todaySeconds;
-    if (remaining <= 0) {
-      remainingText.textContent = '制限時間に達しました';
-      remainingText.style.color = 'var(--accent-color)';
-    } else {
-      remainingText.textContent = formatTimeLong(remaining);
-      remainingText.style.color = '#dca163'; // 落ち着いたキャラメルカラー
-    }
-
-    // 連続視聴時間の更新
-    const breakRemaining = Math.max(breakIntervalSeconds - continuousSeconds, 0);
-    continuousText.textContent = `${formatTimeShort(continuousSeconds)} (休憩まで ${formatTimeShort(breakRemaining)})`;
-
-    // 曜日別制限時間の入力欄セット（フォーカスしていない場合のみ）
-    let isAnyLimitFocused = false;
-    for (let i = 0; i <= 6; i++) {
-      if (document.activeElement === limitInputs[`hours_${i}`] || document.activeElement === limitInputs[`minutes_${i}`]) {
-        isAnyLimitFocused = true;
-        break;
-      }
-    }
-    if (document.activeElement === limitInputs['hours_H'] || document.activeElement === limitInputs['minutes_H']) {
-      isAnyLimitFocused = true;
-    }
-
-    if (!isAnyLimitFocused) {
-      const baseLimit = data.limitSeconds !== undefined ? data.limitSeconds : 90 * 60;
-      for (let i = 0; i <= 6; i++) {
-        const val = data[`limitSeconds_${i}`] !== undefined ? data[`limitSeconds_${i}`] : baseLimit;
-        limitInputs[`hours_${i}`].value = Math.floor(val / 3600);
-        limitInputs[`minutes_${i}`].value = Math.floor((val % 3600) / 60);
-      }
-      const valH = data['limitSeconds_H'] !== undefined ? data['limitSeconds_H'] : baseLimit;
-      limitInputs['hours_H'].value = Math.floor(valH / 3600);
-      limitInputs['minutes_H'].value = Math.floor((valH % 3600) / 60);
-    }
-    
-    if (document.activeElement !== breakIntervalInput) {
-      breakIntervalInput.value = Math.floor(breakIntervalSeconds / 60);
-    }
-
-    if (document.activeElement !== resetHourInput) {
-      resetHourInput.value = resetHour;
-    }
-
-    if (document.activeElement !== debugEnabledInput) {
-      debugEnabledInput.checked = !!data.isDebugEnabled;
-    }
+  async function loadSettings() {
+    applyStatusView(statusView, await readStatus(), true);
   }
 
   // サークル進捗アニメーション
@@ -755,29 +771,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 設定の保存
   saveBtn.addEventListener('click', async () => {
-    const breakMins = parseInt(breakIntervalInput.value, 10) || 30;
-    const resetH = parseInt(resetHourInput.value, 10) || 4;
-
-    const finalBreakMins = Math.max(5, Math.min(180, breakMins));
-    const finalResetH = Math.max(0, Math.min(23, resetH));
+    const finalBreakMins = collectBreakMinutes(breakIntervalInput.value);
+    const finalResetH = collectResetHour(resetHourInput.value);
     const breakIntervalSeconds = finalBreakMins * 60;
 
-    // 各曜日・祝日の設定を取得・バリデーションして秒数に変換
     const newLimits = {};
     for (let i = 0; i <= 6; i++) {
-      const h = parseInt(limitInputs[`hours_${i}`].value, 10) || 0;
-      const m = parseInt(limitInputs[`minutes_${i}`].value, 10) || 0;
-      const valH = Math.max(0, Math.min(23, h));
-      const valM = Math.max(0, Math.min(59, m));
-      let limitSec = (valH * 3600) + (valM * 60);
-      newLimits[`limitSeconds_${i}`] = limitSec === 0 ? 60 : limitSec;
+      newLimits[`limitSeconds_${i}`] = collectLimitSeconds(
+        limitInputs[`hours_${i}`].value,
+        limitInputs[`minutes_${i}`].value
+      );
     }
-    const hH = parseInt(limitInputs['hours_H'].value, 10) || 0;
-    const mH = parseInt(limitInputs['minutes_H'].value, 10) || 0;
-    const valHH = Math.max(0, Math.min(23, hH));
-    const valMH = Math.max(0, Math.min(59, mH));
-    let limitSecH = (valHH * 3600) + (valMH * 60);
-    newLimits['limitSeconds_H'] = limitSecH === 0 ? 60 : limitSecH;
+    newLimits.limitSeconds_H = collectLimitSeconds(
+      limitInputs.hours_H.value,
+      limitInputs.minutes_H.value
+    );
 
     const businessDate = getBusinessDate(finalResetH);
     const key = getActiveLimitKey(businessDate);
@@ -798,7 +806,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       limitSeconds: activeLimitSeconds
     });
 
-    await loadStatus();
+    fillSettingsInputs(statusView, saveObj);
+    await loadTimer();
 
     saveStatus.classList.add('show');
     setTimeout(() => {
@@ -813,13 +822,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // ロード時実行
-  await loadStatus();
-  
-  // 1秒ごとに表示を同期（タイマー画面を開いている場合）
+  await loadSettings();
+
+  // 利用時間の表示だけを同期する。設定欄は開いたときと保存直後に限る。
   setInterval(() => {
     if (activeTab === 'timer') {
-      loadStatus();
+      loadTimer();
     }
   }, 1000);
 });
@@ -837,6 +845,10 @@ if (typeof module !== 'undefined') {
     findPeakHour,
     aggregateDailyHistory,
     aggregateWeeklyHistory,
-    aggregateMonthlyHistory
+    aggregateMonthlyHistory,
+    collectBreakMinutes,
+    collectResetHour,
+    collectLimitSeconds,
+    applyStatusView
   };
 }
