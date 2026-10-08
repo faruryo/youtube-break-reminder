@@ -1,6 +1,8 @@
 const DEFAULT_LIMIT_SECONDS = 90 * 60; // デフォルト1.5時間 (平日)
 const DEFAULT_LIMIT_SECONDS_WEEKEND = 3 * 3600; // デフォルト3時間 (土日・祝日)
 const DEFAULT_BREAK_SECONDS = 30 * 60; // デフォルト30分
+const DEFAULT_EXTENSION_MINUTES = 30; // デフォルト延長時間 (30分)
+const DEFAULT_MAX_EXTENSIONS = 1; // デフォルト1日の最大延長回数 (1回まで)
 
 // 日本の祝日（祝日法に基づくもの）を生成する関数
 function getHolidays(year) {
@@ -156,7 +158,20 @@ async function getActiveLimit() {
 
 // インストール時に初期設定を保存
 chrome.runtime.onInstalled.addListener(async () => {
-  const keys = ['limitSeconds', 'breakIntervalSeconds', 'todaySeconds', 'lastActiveDate', 'continuousSeconds', 'lastHeartbeatTime', 'resetHour', 'isDebugEnabled'];
+  const keys = [
+    'limitSeconds',
+    'breakIntervalSeconds',
+    'todaySeconds',
+    'lastActiveDate',
+    'continuousSeconds',
+    'lastHeartbeatTime',
+    'resetHour',
+    'isDebugEnabled',
+    'extensionMinutes',
+    'maxExtensionsPerDay',
+    'todayExtensionCount',
+    'todayExtendedSeconds'
+  ];
   for (let i = 0; i <= 6; i++) {
     keys.push(`limitSeconds_${i}`);
   }
@@ -192,6 +207,10 @@ chrome.runtime.onInstalled.addListener(async () => {
   if (data.lastHeartbeatTime === undefined) updates.lastHeartbeatTime = 0;
   if (data.resetHour === undefined) updates.resetHour = 4; // デフォルト朝4時
   if (data.isDebugEnabled === undefined) updates.isDebugEnabled = false; // デフォルト無効
+  if (data.extensionMinutes === undefined) updates.extensionMinutes = DEFAULT_EXTENSION_MINUTES; // 延長時間 (30分)
+  if (data.maxExtensionsPerDay === undefined) updates.maxExtensionsPerDay = DEFAULT_MAX_EXTENSIONS; // 1日の最大延長回数 (1回)
+  if (data.todayExtensionCount === undefined) updates.todayExtensionCount = 0;
+  if (data.todayExtendedSeconds === undefined) updates.todayExtendedSeconds = 0;
   
   const finalResetHour = updates.resetHour !== undefined ? updates.resetHour : (data.resetHour !== undefined ? data.resetHour : 4);
   const businessToday = getBusinessDateString(finalResetHour);
@@ -205,7 +224,8 @@ chrome.runtime.onInstalled.addListener(async () => {
   await chrome.storage.local.set({ limitSeconds: activeLimit });
   
   const finalToday = updates.todaySeconds !== undefined ? updates.todaySeconds : (data.todaySeconds || 0);
-  await updateBadge(finalToday, activeLimit);
+  const finalExtended = updates.todayExtendedSeconds !== undefined ? updates.todayExtendedSeconds : (data.todayExtendedSeconds || 0);
+  await updateBadge(finalToday, activeLimit + finalExtended);
 });
 
 // バッジ表示を更新する関数
@@ -242,6 +262,8 @@ async function checkAndResetDate() {
     await chrome.storage.local.set({
       todaySeconds: 0,
       continuousSeconds: 0, // 連続視聴もリセット
+      todayExtensionCount: 0, // 当日延長回数もリセット
+      todayExtendedSeconds: 0, // 当日延長時間もリセット
       lastActiveDate: businessToday,
       limitSeconds: activeLimit
     });
@@ -323,13 +345,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         
         // 950ms未満の重複したハートビート（複数ウィンドウが並んでいる場合など）は無視して、現在の状態を返す
         if (lastIncrementTime > 0 && (now - lastIncrementTime < 950)) {
-          const data = await chrome.storage.local.get(['todaySeconds', 'limitSeconds', 'continuousSeconds']);
+          const data = await chrome.storage.local.get([
+            'todaySeconds',
+            'limitSeconds',
+            'continuousSeconds',
+            'todayExtendedSeconds',
+            'todayExtensionCount',
+            'maxExtensionsPerDay',
+            'extensionMinutes'
+          ]);
           const todaySeconds = data.todaySeconds || 0;
-          const limitSeconds = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
+          const baseLimit = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
+          const todayExtendedSeconds = data.todayExtendedSeconds || 0;
+          const effectiveLimit = baseLimit + todayExtendedSeconds;
           const continuousSeconds = data.continuousSeconds || 0;
-          const limitExceeded = todaySeconds >= limitSeconds;
+          const limitExceeded = todaySeconds >= effectiveLimit;
           
-          sendResponse({ success: true, todaySeconds, continuousSeconds, limitExceeded });
+          sendResponse({
+            success: true,
+            todaySeconds,
+            continuousSeconds,
+            limitExceeded,
+            todayExtendedSeconds,
+            todayExtensionCount: data.todayExtensionCount || 0,
+            maxExtensionsPerDay: data.maxExtensionsPerDay !== undefined ? data.maxExtensionsPerDay : DEFAULT_MAX_EXTENSIONS,
+            extensionMinutes: data.extensionMinutes || DEFAULT_EXTENSION_MINUTES,
+            effectiveLimitSeconds: effectiveLimit
+          });
           return;
         }
         
@@ -338,9 +380,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // タイムアウトによるリセットを確認
         let continuousSeconds = await checkAndResetContinuous();
         
-        const data = await chrome.storage.local.get(['todaySeconds', 'limitSeconds', 'lastHeartbeatTime']);
+        const data = await chrome.storage.local.get([
+          'todaySeconds',
+          'limitSeconds',
+          'lastHeartbeatTime',
+          'todayExtendedSeconds',
+          'todayExtensionCount',
+          'maxExtensionsPerDay',
+          'extensionMinutes'
+        ]);
         const lastHeartbeatTime = data.lastHeartbeatTime || 0;
-        const limitSeconds = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
+        const baseLimit = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
+        const todayExtendedSeconds = data.todayExtendedSeconds || 0;
+        const effectiveLimit = baseLimit + todayExtendedSeconds;
         
         let secondsToAdd = 1; // 基本は1秒加算
         
@@ -366,10 +418,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           lastHeartbeatTime: now
         });
         await recordUsageHistory(secondsToAdd, now);
-        await updateBadge(todaySeconds, limitSeconds);
+        await updateBadge(todaySeconds, effectiveLimit);
         
-        const limitExceeded = todaySeconds >= limitSeconds;
-        sendResponse({ success: true, todaySeconds, continuousSeconds, limitExceeded });
+        const limitExceeded = todaySeconds >= effectiveLimit;
+        sendResponse({
+          success: true,
+          todaySeconds,
+          continuousSeconds,
+          limitExceeded,
+          todayExtendedSeconds,
+          todayExtensionCount: data.todayExtensionCount || 0,
+          maxExtensionsPerDay: data.maxExtensionsPerDay !== undefined ? data.maxExtensionsPerDay : DEFAULT_MAX_EXTENSIONS,
+          extensionMinutes: data.extensionMinutes || DEFAULT_EXTENSION_MINUTES,
+          effectiveLimitSeconds: effectiveLimit
+        });
       } catch (err) {
         console.error('Error in HEARTBEAT handling:', err);
         sendResponse({ success: false, error: err.message });
@@ -385,12 +447,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // ポップアップを開いた際にもタイムアウトを即座に反映させる
         const continuousSeconds = await checkAndResetContinuous();
         
-        const data = await chrome.storage.local.get(['todaySeconds', 'limitSeconds', 'breakIntervalSeconds']);
+        const data = await chrome.storage.local.get([
+          'todaySeconds',
+          'limitSeconds',
+          'breakIntervalSeconds',
+          'todayExtendedSeconds',
+          'todayExtensionCount',
+          'maxExtensionsPerDay',
+          'extensionMinutes'
+        ]);
+        const baseLimit = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
+        const todayExtendedSeconds = data.todayExtendedSeconds || 0;
+        const effectiveLimit = baseLimit + todayExtendedSeconds;
+
         sendResponse({
           todaySeconds: data.todaySeconds || 0,
-          limitSeconds: data.limitSeconds || DEFAULT_LIMIT_SECONDS,
+          limitSeconds: baseLimit,
+          effectiveLimitSeconds: effectiveLimit,
           breakIntervalSeconds: data.breakIntervalSeconds || DEFAULT_BREAK_SECONDS,
-          continuousSeconds: continuousSeconds
+          continuousSeconds: continuousSeconds,
+          todayExtendedSeconds: todayExtendedSeconds,
+          todayExtensionCount: data.todayExtensionCount || 0,
+          maxExtensionsPerDay: data.maxExtensionsPerDay !== undefined ? data.maxExtensionsPerDay : DEFAULT_MAX_EXTENSIONS,
+          extensionMinutes: data.extensionMinutes || DEFAULT_EXTENSION_MINUTES
         });
       } catch (err) {
         sendResponse({ error: err.message });
@@ -399,6 +478,62 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
+  if (message.type === 'EXTEND_TIME') {
+    (async () => {
+      try {
+        await checkAndResetDate();
+        const data = await chrome.storage.local.get([
+          'limitSeconds',
+          'todaySeconds',
+          'extensionMinutes',
+          'maxExtensionsPerDay',
+          'todayExtensionCount',
+          'todayExtendedSeconds'
+        ]);
+
+        const maxExtensions = data.maxExtensionsPerDay !== undefined ? data.maxExtensionsPerDay : DEFAULT_MAX_EXTENSIONS;
+        const currentCount = data.todayExtensionCount || 0;
+        const extensionMins = data.extensionMinutes || DEFAULT_EXTENSION_MINUTES;
+
+        // maxExtensions === 0 は延長無効、-1 は無制限
+        if (maxExtensions === 0 || (maxExtensions !== -1 && currentCount >= maxExtensions)) {
+          sendResponse({
+            success: false,
+            reason: 'MAX_REACHED',
+            message: '本日の延長上限に達しているか、延長機能が無効になっています。'
+          });
+          return;
+        }
+
+        const secondsToAdd = extensionMins * 60;
+        const newExtendedSeconds = (data.todayExtendedSeconds || 0) + secondsToAdd;
+        const newCount = currentCount + 1;
+        const baseLimit = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
+        const effectiveLimit = baseLimit + newExtendedSeconds;
+        const todaySeconds = data.todaySeconds || 0;
+
+        await chrome.storage.local.set({
+          todayExtendedSeconds: newExtendedSeconds,
+          todayExtensionCount: newCount
+        });
+
+        await updateBadge(todaySeconds, effectiveLimit);
+
+        sendResponse({
+          success: true,
+          todayExtendedSeconds: newExtendedSeconds,
+          todayExtensionCount: newCount,
+          effectiveLimitSeconds: effectiveLimit,
+          secondsAdded: secondsToAdd,
+          extensionMinutes: extensionMins
+        });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
   if (message.type === 'RESET_CONTINUOUS') {
     (async () => {
       try {
@@ -417,8 +552,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'UPDATE_SETTINGS') {
     (async () => {
       try {
-        const data = await chrome.storage.local.get(['todaySeconds', 'limitSeconds']);
-        await updateBadge(data.todaySeconds || 0, message.limitSeconds || data.limitSeconds || DEFAULT_LIMIT_SECONDS);
+        const data = await chrome.storage.local.get(['todaySeconds', 'limitSeconds', 'todayExtendedSeconds']);
+        const baseLimit = message.limitSeconds || data.limitSeconds || DEFAULT_LIMIT_SECONDS;
+        const effectiveLimit = baseLimit + (data.todayExtendedSeconds || 0);
+        await updateBadge(data.todaySeconds || 0, effectiveLimit);
         sendResponse({ success: true });
       } catch (err) {
         sendResponse({ success: false, error: err.message });
@@ -449,6 +586,8 @@ if (typeof module !== 'undefined') {
     DEFAULT_LIMIT_SECONDS,
     DEFAULT_LIMIT_SECONDS_WEEKEND,
     DEFAULT_BREAK_SECONDS,
+    DEFAULT_EXTENSION_MINUTES,
+    DEFAULT_MAX_EXTENSIONS,
     getBusinessDate,
     isHolidayOrWeekend,
     isHoliday,

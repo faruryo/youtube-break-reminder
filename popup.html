@@ -43,6 +43,10 @@
             <span class="time-label">現在の連続利用時間</span>
             <span id="continuous-time" class="time-value" style="color: var(--text-secondary);">--s</span>
           </div>
+          <div class="time-item" id="extension-status-item" style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-color); display: none;">
+            <span class="time-label">本日の延長</span>
+            <span id="extension-status-time" class="time-value" style="color: #5d8c67;">+0m</span>
+          </div>
         </div>
       </div>
 
@@ -133,6 +137,27 @@
           <div class="input-row">
             <input type="number" id="break-interval" min="5" max="180" value="30">
             <span>分ごと</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="extension-minutes">1回の延長時間</label>
+          <div class="input-row">
+            <input type="number" id="extension-minutes" min="5" max="180" value="30">
+            <span>分</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="max-extensions">1日の最大延長回数</label>
+          <div class="input-row">
+            <select id="max-extensions" class="settings-select">
+              <option value="1">1回まで（推奨）</option>
+              <option value="2">2回まで</option>
+              <option value="3">3回まで</option>
+              <option value="-1">無制限（家族視聴など）</option>
+              <option value="0">延長不可（厳格モード）</option>
+            </select>
           </div>
         </div>
 

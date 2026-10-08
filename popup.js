@@ -311,8 +311,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   limitInputs['minutes_H'] = document.getElementById('limit-minutes-H');
 
   const breakIntervalInput = document.getElementById('break-interval');
+  const extensionMinutesInput = document.getElementById('extension-minutes');
+  const maxExtensionsSelect = document.getElementById('max-extensions');
   const resetHourInput = document.getElementById('reset-hour');
   const debugEnabledInput = document.getElementById('debug-enabled');
+
+  const extensionStatusItem = document.getElementById('extension-status-item');
+  const extensionStatusTime = document.getElementById('extension-status-time');
   
   const saveBtn = document.getElementById('save-btn');
   const saveStatus = document.getElementById('save-status');
@@ -675,7 +680,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       'breakIntervalSeconds',
       'continuousSeconds',
       'resetHour',
-      'isDebugEnabled'
+      'isDebugEnabled',
+      'extensionMinutes',
+      'maxExtensionsPerDay',
+      'todayExtensionCount',
+      'todayExtendedSeconds'
     ];
     for (let i = 0; i <= 6; i++) {
       keys.push(`limitSeconds_${i}`);
@@ -689,15 +698,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     const breakIntervalSeconds = data.breakIntervalSeconds || 30 * 60; // デフォルト30分
     const continuousSeconds = data.continuousSeconds || 0;
     const resetHour = data.resetHour !== undefined ? data.resetHour : 4; // デフォルト朝4時
+    const todayExtendedSeconds = data.todayExtendedSeconds || 0;
+    const todayExtensionCount = data.todayExtensionCount || 0;
+    const effectiveLimit = limitSeconds + todayExtendedSeconds;
 
-    // 進捗率の計算
-    const progress = Math.min(todaySeconds / limitSeconds, 1);
+    // 進捗率の計算 (実効制限時間ベース)
+    const progress = Math.min(todaySeconds / effectiveLimit, 1);
     setProgress(progress);
 
     // テキスト表示の更新
     currentText.textContent = formatTimeShort(todaySeconds);
     
-    const remaining = limitSeconds - todaySeconds;
+    const remaining = effectiveLimit - todaySeconds;
     if (remaining <= 0) {
       remainingText.textContent = '制限時間に達しました';
       remainingText.style.color = 'var(--accent-color)';
@@ -709,6 +721,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 連続視聴時間の更新
     const breakRemaining = Math.max(breakIntervalSeconds - continuousSeconds, 0);
     continuousText.textContent = `${formatTimeShort(continuousSeconds)} (休憩まで ${formatTimeShort(breakRemaining)})`;
+
+    // 本日の延長ステータス表示
+    if (extensionStatusItem && extensionStatusTime) {
+      if (todayExtensionCount > 0 && todayExtendedSeconds > 0) {
+        extensionStatusItem.style.display = 'flex';
+        const extMins = Math.round(todayExtendedSeconds / 60);
+        extensionStatusTime.textContent = `${todayExtensionCount}回 (+${extMins}分)`;
+      } else {
+        extensionStatusItem.style.display = 'none';
+      }
+    }
 
     // 曜日別制限時間の入力欄セット（フォーカスしていない場合のみ）
     let isAnyLimitFocused = false;
@@ -738,6 +761,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       breakIntervalInput.value = Math.floor(breakIntervalSeconds / 60);
     }
 
+    if (extensionMinutesInput && document.activeElement !== extensionMinutesInput) {
+      extensionMinutesInput.value = data.extensionMinutes !== undefined ? data.extensionMinutes : 30;
+    }
+
+    if (maxExtensionsSelect && document.activeElement !== maxExtensionsSelect) {
+      maxExtensionsSelect.value = String(data.maxExtensionsPerDay !== undefined ? data.maxExtensionsPerDay : 1);
+    }
+
     if (document.activeElement !== resetHourInput) {
       resetHourInput.value = resetHour;
     }
@@ -757,9 +788,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   saveBtn.addEventListener('click', async () => {
     const breakMins = parseInt(breakIntervalInput.value, 10) || 30;
     const resetH = parseInt(resetHourInput.value, 10) || 4;
+    const extMins = parseInt(extensionMinutesInput.value, 10) || 30;
+    const maxExt = parseInt(maxExtensionsSelect.value, 10);
 
     const finalBreakMins = Math.max(5, Math.min(180, breakMins));
     const finalResetH = Math.max(0, Math.min(23, resetH));
+    const finalExtMins = Math.max(5, Math.min(180, extMins));
+    const finalMaxExt = isNaN(maxExt) ? 1 : maxExt;
     const breakIntervalSeconds = finalBreakMins * 60;
 
     // 各曜日・祝日の設定を取得・バリデーションして秒数に変換
@@ -787,6 +822,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       ...newLimits,
       limitSeconds: activeLimitSeconds,
       breakIntervalSeconds,
+      extensionMinutes: finalExtMins,
+      maxExtensionsPerDay: finalMaxExt,
       resetHour: finalResetH,
       isDebugEnabled: debugEnabledInput.checked
     };

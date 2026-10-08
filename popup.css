@@ -190,6 +190,24 @@ header h1 {
   color: var(--text-primary);
 }
 
+.settings-select {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+  width: 100%;
+  transition: border-color 0.2s ease;
+}
+
+.settings-select:focus {
+  border-color: #606060;
+}
+
 /* 保存ボタン (グラデーションを排除したミニマルソリッドデザイン) */
 .save-btn {
   width: 100%;

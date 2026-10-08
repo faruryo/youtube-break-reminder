@@ -140,3 +140,386 @@
   outline: 2px solid var(--text-primary);
   outline-offset: 3px;
 }
+
+/* --- 延長機能 & チャレンジのスタイル --- */
+
+.ybr-card.ybr-challenge-active {
+  max-width: 540px;
+}
+
+.ybr-extension-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px dashed rgba(176, 158, 144, 0.2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.ybr-extension-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: rgba(93, 140, 103, 0.15);
+  color: #78ab83;
+  border: 1px solid rgba(93, 140, 103, 0.3);
+}
+
+.ybr-challenge-btn {
+  background: rgba(220, 161, 99, 0.15);
+  border: 1px solid rgba(220, 161, 99, 0.4);
+  color: #f5f0eb;
+  padding: 12px 24px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+}
+
+.ybr-challenge-btn:hover {
+  background: rgba(220, 161, 99, 0.25);
+  border-color: #dca163;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.ybr-challenge-btn:active {
+  transform: translateY(0);
+}
+
+.ybr-challenge-subtext {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.ybr-no-extend-msg {
+  font-size: 13px;
+  color: #8c7e74;
+  line-height: 1.5;
+  margin-top: 10px;
+}
+
+/* チャレンジヘッダー */
+.ybr-challenge-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(176, 158, 144, 0.15);
+  padding-bottom: 14px;
+}
+
+.ybr-challenge-title-group {
+  text-align: left;
+}
+
+.ybr-challenge-tag {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #dca163;
+  font-weight: 700;
+}
+
+.ybr-challenge-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 2px;
+}
+
+.ybr-cancel-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.ybr-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+/* チャレンジコンテンツ共通 */
+.ybr-challenge-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+/* 1. タイピングゲーム */
+.ybr-typing-target {
+  background: rgba(18, 16, 15, 0.6);
+  border: 1px solid rgba(176, 158, 144, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #f5f0eb;
+  margin-bottom: 16px;
+  user-select: none;
+  -webkit-user-select: none;
+  text-align: left;
+  letter-spacing: 0.5px;
+}
+
+.ybr-typing-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(30, 27, 24, 0.9);
+  border: 1px solid rgba(176, 158, 144, 0.3);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 15px;
+  color: #ffffff;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ybr-typing-input:focus {
+  border-color: #dca163;
+  box-shadow: 0 0 10px rgba(220, 161, 99, 0.3);
+}
+
+.ybr-typing-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+}
+
+/* 2. 暗算ゲーム */
+.ybr-math-qnum {
+  font-size: 13px;
+  color: #dca163;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.ybr-math-formula {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 12px 0 20px 0;
+  letter-spacing: 2px;
+}
+
+.ybr-math-input-group {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.ybr-math-input {
+  width: 140px;
+  background: rgba(30, 27, 24, 0.9);
+  border: 1px solid rgba(176, 158, 144, 0.3);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 20px;
+  text-align: center;
+  color: #ffffff;
+  outline: none;
+  font-family: monospace;
+}
+
+.ybr-math-input:focus {
+  border-color: #dca163;
+  box-shadow: 0 0 10px rgba(220, 161, 99, 0.3);
+}
+
+.ybr-action-btn {
+  background: var(--accent-color);
+  border: none;
+  color: #ffffff;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ybr-action-btn:hover {
+  background: #a02020;
+}
+
+.ybr-feedback-msg {
+  font-size: 13px;
+  margin-top: 12px;
+  min-height: 18px;
+}
+
+.ybr-feedback-msg.error {
+  color: #e74c3c;
+  animation: ybr-shake 0.3s ease;
+}
+
+@keyframes ybr-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+
+/* 3. 数字タッチゲーム */
+.ybr-touch-target-banner {
+  font-size: 15px;
+  font-weight: 600;
+  color: #dca163;
+  margin-bottom: 16px;
+}
+
+.ybr-touch-target-banner span {
+  font-size: 22px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 4px;
+}
+
+.ybr-touch-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.ybr-touch-tile {
+  background: rgba(45, 40, 36, 0.85);
+  border: 1px solid rgba(176, 158, 144, 0.25);
+  border-radius: 12px;
+  padding: 16px 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ybr-touch-tile:hover {
+  background: rgba(70, 62, 56, 0.9);
+  border-color: #dca163;
+  transform: scale(1.05);
+}
+
+.ybr-touch-tile.cleared {
+  opacity: 0.15;
+  pointer-events: none;
+  background: #2a2522;
+  border-color: transparent;
+}
+
+.ybr-touch-tile.wrong {
+  background: rgba(231, 76, 60, 0.5);
+  border-color: #e74c3c;
+  animation: ybr-shake 0.3s ease;
+}
+
+/* 4. ストループ色あてクイズ */
+.ybr-stroop-word {
+  font-size: 44px;
+  font-weight: 800;
+  margin: 20px 0 24px 0;
+  letter-spacing: 2px;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.4));
+}
+
+.ybr-stroop-options {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.ybr-stroop-btn {
+  background: rgba(45, 40, 36, 0.85);
+  border: 1px solid rgba(176, 158, 144, 0.25);
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ybr-stroop-btn:hover {
+  background: rgba(70, 62, 56, 0.95);
+  border-color: #dca163;
+  transform: translateY(-2px);
+}
+
+/* 5. 動くボタン捕獲 */
+.ybr-catch-arena {
+  width: 100%;
+  height: 200px;
+  background: rgba(18, 16, 15, 0.6);
+  border: 1px dashed rgba(176, 158, 144, 0.3);
+  border-radius: 14px;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.ybr-catch-target-btn {
+  position: absolute;
+  padding: 10px 18px;
+  background: #c02c2c;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(192, 44, 44, 0.4);
+  transition: top 0.25s ease-out, left 0.25s ease-out, transform 0.1s ease;
+  user-select: none;
+}
+
+.ybr-catch-target-btn:hover {
+  transform: scale(1.1);
+}
+
+.ybr-catch-target-btn:active {
+  transform: scale(0.95);
+}
+
+/* クリア演出 */
+.ybr-clear-view {
+  padding: 24px 0;
+  animation: ybr-scale-up 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.ybr-clear-icon {
+  font-size: 56px;
+  margin-bottom: 16px;
+}
+
+.ybr-clear-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #78ab83;
+  margin-bottom: 8px;
+}
+
+.ybr-clear-msg {
+  font-size: 15px;
+  color: var(--text-primary);
+}

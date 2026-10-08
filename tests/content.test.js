@@ -650,4 +650,95 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
       expect(mockPlay).toHaveBeenCalled();
     });
   });
+
+  describe('Extension Challenges & Block Overlay Tests', () => {
+    it('handleBlockKeydown should allow input when target is INPUT element', () => {
+      const mockEvent = {
+        target: { tagName: 'INPUT' },
+        code: 'KeyA',
+        key: 'a',
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+
+      content.handleBlockKeydown(mockEvent);
+
+      expect(mockEvent.preventDefault).not.toHaveBeenCalled();
+      expect(mockEvent.stopPropagation).toHaveBeenCalled();
+    });
+
+    it('handleBlockKeydown should block regular keys when not in an input field', () => {
+      const mockEvent = {
+        target: { tagName: 'DIV' },
+        code: 'KeyA',
+        key: 'a',
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+
+      content.handleBlockKeydown(mockEvent);
+
+      expect(mockEvent.preventDefault).toHaveBeenCalled();
+      expect(mockEvent.stopPropagation).toHaveBeenCalled();
+    });
+
+    it('renderBlockDefaultUI should render start challenge button', () => {
+      const card = {
+        classList: { remove: jest.fn(), add: jest.fn() },
+        innerHTML: '',
+        querySelector: jest.fn(() => ({ addEventListener: jest.fn() }))
+      };
+
+      content.renderBlockDefaultUI(card);
+
+      expect(card.innerHTML).toContain('ybr-start-challenge-btn');
+      expect(card.innerHTML).toContain('延長チャレンジに挑戦する');
+    });
+
+    it('startRandomChallenge should render specified challenge', () => {
+      const card = {
+        classList: { add: jest.fn(), remove: jest.fn() },
+        innerHTML: '',
+        querySelector: jest.fn(() => ({ addEventListener: jest.fn(), focus: jest.fn() })),
+        querySelectorAll: jest.fn(() => [])
+      };
+
+      content.startRandomChallenge(card, 'typing');
+      expect(card.innerHTML).toContain('宣誓タイピング');
+
+      content.startRandomChallenge(card, 'math');
+      expect(card.innerHTML).toContain('脳トレ暗算');
+
+      content.startRandomChallenge(card, 'touch');
+      expect(card.innerHTML).toContain('数字タッチ');
+
+      content.startRandomChallenge(card, 'stroop');
+      expect(card.innerHTML).toContain('色あてテスト');
+
+      content.startRandomChallenge(card, 'catch');
+      expect(card.innerHTML).toContain('逃げるボタン捕獲');
+    });
+
+    it('handleChallengeClear should send EXTEND_TIME message', () => {
+      const card = {
+        innerHTML: ''
+      };
+
+      chrome.runtime.sendMessage.mockImplementation((msg, cb) => {
+        if (msg.type === 'EXTEND_TIME' && cb) {
+          cb({ success: true, todayExtendedSeconds: 1800, todayExtensionCount: 1 });
+        }
+      });
+
+      content.handleChallengeClear(card);
+
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+        { type: 'EXTEND_TIME' },
+        expect.any(Function)
+      );
+      expect(card.innerHTML).toContain('試練クリア！');
+    });
+  });
 });

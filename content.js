@@ -1,6 +1,10 @@
 let todaySeconds = 0;
 let limitSeconds = 90 * 60; // 1.5時間
 let breakIntervalSeconds = 30 * 60; // 30分
+let todayExtendedSeconds = 0;
+let todayExtensionCount = 0;
+let maxExtensionsPerDay = 1;
+let extensionMinutes = 30;
 
 let continuousSeconds = 0;
 let heartbeatIntervalId = null;
@@ -29,6 +33,10 @@ async function init() {
     todaySeconds = status.todaySeconds;
     limitSeconds = status.limitSeconds;
     breakIntervalSeconds = status.breakIntervalSeconds;
+    todayExtendedSeconds = status.todayExtendedSeconds || 0;
+    todayExtensionCount = status.todayExtensionCount || 0;
+    maxExtensionsPerDay = status.maxExtensionsPerDay !== undefined ? status.maxExtensionsPerDay : 1;
+    extensionMinutes = status.extensionMinutes || 30;
   }
   
   // ストレージからデバッグモード設定を取得
@@ -36,7 +44,7 @@ async function init() {
   isDebugEnabled = !!data.isDebugEnabled;
 
   // 初期状態で既に制限時間を超えているか確認
-  if (todaySeconds >= limitSeconds) {
+  if (todaySeconds >= limitSeconds + todayExtendedSeconds) {
     showBlockOverlay();
     return;
   }
@@ -57,6 +65,22 @@ async function init() {
       if (changes.todaySeconds) {
         todaySeconds = changes.todaySeconds.newValue;
         checkDailyLimit();
+      }
+      if (changes.todayExtendedSeconds) {
+        todayExtendedSeconds = changes.todayExtendedSeconds.newValue || 0;
+        checkDailyLimit();
+      }
+      if (changes.todayExtensionCount) {
+        todayExtensionCount = changes.todayExtensionCount.newValue || 0;
+        updateBlockOverlayUI();
+      }
+      if (changes.maxExtensionsPerDay) {
+        maxExtensionsPerDay = changes.maxExtensionsPerDay.newValue !== undefined ? changes.maxExtensionsPerDay.newValue : 1;
+        updateBlockOverlayUI();
+      }
+      if (changes.extensionMinutes) {
+        extensionMinutes = changes.extensionMinutes.newValue || 30;
+        updateBlockOverlayUI();
       }
       if (changes.isDebugEnabled) {
         isDebugEnabled = !!changes.isDebugEnabled.newValue;
@@ -170,6 +194,10 @@ function startHeartbeat() {
         if (response && response.success) {
           todaySeconds = response.todaySeconds;
           continuousSeconds = response.continuousSeconds || 0;
+          if (response.todayExtendedSeconds !== undefined) todayExtendedSeconds = response.todayExtendedSeconds;
+          if (response.todayExtensionCount !== undefined) todayExtensionCount = response.todayExtensionCount;
+          if (response.maxExtensionsPerDay !== undefined) maxExtensionsPerDay = response.maxExtensionsPerDay;
+          if (response.extensionMinutes !== undefined) extensionMinutes = response.extensionMinutes;
           
           if (response.limitExceeded) {
             showBlockOverlay();
@@ -229,10 +257,11 @@ function resumeVideos() {
 
 // デイリー制限のチェック
 function checkDailyLimit() {
-  if (todaySeconds >= limitSeconds) {
+  const effectiveLimit = limitSeconds + todayExtendedSeconds;
+  if (todaySeconds >= effectiveLimit) {
     showBlockOverlay();
-  } else if (isBlocked && todaySeconds < limitSeconds) {
-    // 制限時間が引き上げられたりリセットされた場合は解除
+  } else if (isBlocked && todaySeconds < effectiveLimit) {
+    // 制限時間が引き上げられたりリセット・延長された場合は解除
     removeBlockOverlay();
   }
 }
@@ -294,6 +323,15 @@ function blockKeyUntilRelease(releasedCode, releasedKey) {
 
 // デイリー制限オーバーレイ表示中のキー入力ハンドラ
 function handleBlockKeydown(e) {
+  // チャレンジ内のinput/textareaに入力している最中は、文字入力を許可
+  const target = e.target;
+  const isInputActive = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
+  if (isInputActive) {
+    // Spaceキー等による背後動画の再生・スクロールを防ぐためイベント伝播のみ遮断
+    e.stopPropagation();
+    return;
+  }
+
   // スクロール・メディア操作キーは修飾キー（Ctrl+Homeなど）が付いていても確実に遮断
   if (isScrollOrMediaKey(e)) {
     e.preventDefault();
@@ -313,6 +351,429 @@ function handleBlockKeydown(e) {
   e.stopImmediatePropagation();
 }
 
+// デイリー制限オーバーレイのデフォルトカード描画
+function renderBlockDefaultUI(card) {
+  card.classList.remove('ybr-challenge-active');
+  const canExtend = maxExtensionsPerDay === -1 || todayExtensionCount < maxExtensionsPerDay;
+  let extendHtml = '';
+
+  if (maxExtensionsPerDay === 0) {
+    extendHtml = `<div class="ybr-no-extend-msg">⚠️ 延長機能は設定で無効化されています</div>`;
+  } else if (canExtend) {
+    const badgeText = maxExtensionsPerDay === -1
+      ? '本日あと ∞回 延長可能'
+      : `本日あと ${maxExtensionsPerDay - todayExtensionCount}回 延長可能`;
+    extendHtml = `
+      <div class="ybr-extension-section">
+        <span class="ybr-extension-badge">${badgeText}</span>
+        <button id="ybr-start-challenge-btn" class="ybr-challenge-btn">☕ ${extensionMinutes}分延長チャレンジに挑戦する</button>
+        <p class="ybr-challenge-subtext">※ランダムな試練をクリアすると今日だけ${extensionMinutes}分延長されます</p>
+      </div>
+    `;
+  } else {
+    extendHtml = `
+      <div class="ybr-no-extend-msg">
+        本日の延長枠（${maxExtensionsPerDay}回）をすべて使い切りました。<br>
+        明日のリセットをお楽しみに！
+      </div>
+    `;
+  }
+
+  card.innerHTML = `
+    <div class="ybr-icon">⏳</div>
+    <h1>本日のYouTubeは終了です</h1>
+    <p>今日の視聴・ブラウジング時間が制限時間（${formatTime(limitSeconds + todayExtendedSeconds)}）に達しました。</p>
+    <p class="ybr-subtext">今日やりたかった他のことに時間を使いましょう！</p>
+    ${extendHtml}
+  `;
+
+  const startBtn = card.querySelector('#ybr-start-challenge-btn');
+  if (startBtn) {
+    startBtn.addEventListener('click', () => {
+      startRandomChallenge(card);
+    });
+  }
+}
+
+// オーバーレイ表示更新
+function updateBlockOverlayUI() {
+  const overlay = document.getElementById('yt-break-reminder-block-overlay');
+  if (!overlay) return;
+  const card = overlay.querySelector('.ybr-card');
+  if (!card) return;
+  if (!card.classList.contains('ybr-challenge-active')) {
+    renderBlockDefaultUI(card);
+  }
+}
+
+// 試練クリア時の共通処理
+function handleChallengeClear(card) {
+  card.innerHTML = `
+    <div class="ybr-clear-view">
+      <div class="ybr-clear-icon">🎉</div>
+      <div class="ybr-clear-title">試練クリア！</div>
+      <div class="ybr-clear-msg">${extensionMinutes}分 延長されました。<br>動画を再開します...</div>
+    </div>
+  `;
+
+  chrome.runtime.sendMessage({ type: 'EXTEND_TIME' }, (response) => {
+    if (response && response.success) {
+      todayExtendedSeconds = response.todayExtendedSeconds;
+      todayExtensionCount = response.todayExtensionCount;
+    }
+    setTimeout(() => {
+      removeBlockOverlay();
+      resumeVideos();
+    }, 1200);
+  });
+}
+
+// チャレンジヘッダー生成
+function createChallengeHeader(title) {
+  return `
+    <div class="ybr-challenge-header">
+      <div class="ybr-challenge-title-group">
+        <div class="ybr-challenge-tag">RANDOM CHALLENGE</div>
+        <div class="ybr-challenge-name">${title}</div>
+      </div>
+      <button class="ybr-cancel-btn" id="ybr-challenge-cancel-btn">諦めて戻る</button>
+    </div>
+  `;
+}
+
+// 1. 宣誓タイピング
+function renderTypingChallenge(card) {
+  const phrases = [
+    `本当にあと${extensionMinutes}分必要です。これを見終わったら作業に戻ります。`,
+    `YouTubeのアルゴリズムに操られるな。自分の意思で見るのだ。`,
+    `今日できることを明日に延ばすな。でもあと${extensionMinutes}分だけ。`,
+    `時間は有限です。この${extensionMinutes}分を心から大切に使います。`,
+    `私は自らの選択でYouTubeを延長し、必ず切り上げます。`
+  ];
+  const targetText = phrases[Math.floor(Math.random() * phrases.length)];
+
+  card.innerHTML = `
+    ${createChallengeHeader('✍️ 宣誓タイピング')}
+    <p class="ybr-challenge-desc">以下の文章を正確に入力してください（コピペ不可）</p>
+    <div class="ybr-typing-target" id="ybr-typing-target">${targetText}</div>
+    <input type="text" class="ybr-typing-input" id="ybr-typing-input" placeholder="ここに入力..." autocomplete="off" spellcheck="false">
+    <div class="ybr-typing-stats">
+      <span id="ybr-typing-count">0 / ${targetText.length} 文字</span>
+      <span id="ybr-typing-match" style="color: #8c7e74;">入力中...</span>
+    </div>
+  `;
+
+  const cancelBtn = card.querySelector('#ybr-challenge-cancel-btn');
+  if (cancelBtn) cancelBtn.addEventListener('click', () => renderBlockDefaultUI(card));
+
+  const input = card.querySelector('#ybr-typing-input');
+  const countEl = card.querySelector('#ybr-typing-count');
+  const matchEl = card.querySelector('#ybr-typing-match');
+
+  if (input) {
+    input.addEventListener('paste', (e) => e.preventDefault()); // コピペ防止
+    input.addEventListener('input', () => {
+      const val = input.value;
+      if (countEl) countEl.textContent = `${val.length} / ${targetText.length} 文字`;
+
+      if (val === targetText) {
+        if (matchEl) {
+          matchEl.textContent = '一致！クリア！';
+          matchEl.style.color = '#78ab83';
+        }
+        input.disabled = true;
+        setTimeout(() => handleChallengeClear(card), 400);
+      } else if (targetText.startsWith(val)) {
+        if (matchEl) {
+          matchEl.textContent = '入力中...';
+          matchEl.style.color = '#8c7e74';
+        }
+      } else {
+        if (matchEl) {
+          matchEl.textContent = '文字が違います';
+          matchEl.style.color = '#e74c3c';
+        }
+      }
+    });
+    setTimeout(() => input.focus(), 50);
+  }
+}
+
+// 2. 脳トレ暗算（3問連続）
+function renderMathChallenge(card) {
+  let step = 1;
+
+  function generateQuestion(s) {
+    if (s === 1) {
+      const a = Math.floor(Math.random() * 50) + 15;
+      const b = Math.floor(Math.random() * 45) + 15;
+      return { formula: `${a} + ${b}`, ans: a + b };
+    } else if (s === 2) {
+      const a = Math.floor(Math.random() * 60) + 35;
+      const b = Math.floor(Math.random() * 30) + 12;
+      return { formula: `${a} - ${b}`, ans: a - b };
+    } else {
+      const a = Math.floor(Math.random() * 8) + 12;
+      const b = Math.floor(Math.random() * 7) + 3;
+      return { formula: `${a} × ${b}`, ans: a * b };
+    }
+  }
+
+  let currentQ = generateQuestion(step);
+
+  function updateView() {
+    card.innerHTML = `
+      ${createChallengeHeader('🧠 脳トレ暗算 (3連続正解)')}
+      <div class="ybr-math-qnum">第 ${step} / 3 問</div>
+      <div class="ybr-math-formula">${currentQ.formula} = ?</div>
+      <div class="ybr-math-input-group">
+        <input type="number" class="ybr-math-input" id="ybr-math-input" placeholder="答え">
+        <button class="ybr-action-btn" id="ybr-math-submit">回答</button>
+      </div>
+      <div class="ybr-feedback-msg" id="ybr-math-feedback"></div>
+    `;
+
+    const cancelBtn = card.querySelector('#ybr-challenge-cancel-btn');
+    if (cancelBtn) cancelBtn.addEventListener('click', () => renderBlockDefaultUI(card));
+
+    const input = card.querySelector('#ybr-math-input');
+    const submitBtn = card.querySelector('#ybr-math-submit');
+    const feedback = card.querySelector('#ybr-math-feedback');
+
+    const checkAnswer = () => {
+      const userAns = parseInt(input.value, 10);
+      if (userAns === currentQ.ans) {
+        step++;
+        if (step > 3) {
+          handleChallengeClear(card);
+        } else {
+          currentQ = generateQuestion(step);
+          updateView();
+        }
+      } else {
+        feedback.className = 'ybr-feedback-msg error';
+        feedback.textContent = '不正解！第1問からやり直しです';
+        input.value = '';
+        step = 1;
+        currentQ = generateQuestion(step);
+        setTimeout(() => updateView(), 900);
+      }
+    };
+
+    if (submitBtn) submitBtn.addEventListener('click', checkAnswer);
+    if (input) {
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') checkAnswer();
+      });
+      setTimeout(() => input.focus(), 50);
+    }
+  }
+
+  updateView();
+}
+
+// 3. 数字タッチゲーム（1〜16）
+function renderTouchChallenge(card) {
+  let target = 1;
+  const numbers = Array.from({ length: 16 }, (_, i) => i + 1);
+  // シャッフル
+  for (let i = numbers.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [numbers[i], numbers[j]] = [numbers[j], numbers[i]];
+  }
+
+  function updateView() {
+    card.innerHTML = `
+      ${createChallengeHeader('🔢 数字タッチ (1〜16)')}
+      <div class="ybr-touch-target-banner">次は <span>${target}</span> を押してください</div>
+      <div class="ybr-touch-grid" id="ybr-touch-grid">
+        ${numbers.map(num => `
+          <button class="ybr-touch-tile ${num < target ? 'cleared' : ''}" data-num="${num}">${num}</button>
+        `).join('')}
+      </div>
+      <div class="ybr-feedback-msg" id="ybr-touch-feedback"></div>
+    `;
+
+    const cancelBtn = card.querySelector('#ybr-challenge-cancel-btn');
+    if (cancelBtn) cancelBtn.addEventListener('click', () => renderBlockDefaultUI(card));
+
+    const tiles = card.querySelectorAll('.ybr-touch-tile');
+    const feedback = card.querySelector('#ybr-touch-feedback');
+
+    tiles.forEach(tile => {
+      tile.addEventListener('click', () => {
+        const num = parseInt(tile.getAttribute('data-num'), 10);
+        if (num === target) {
+          target++;
+          if (target > 16) {
+            handleChallengeClear(card);
+          } else {
+            tile.classList.add('cleared');
+            const bannerSpan = card.querySelector('.ybr-touch-target-banner span');
+            if (bannerSpan) bannerSpan.textContent = target;
+          }
+        } else {
+          tile.classList.add('wrong');
+          if (feedback) {
+            feedback.className = 'ybr-feedback-msg error';
+            feedback.textContent = 'ミス！1からやり直しです';
+          }
+          setTimeout(() => {
+            renderTouchChallenge(card);
+          }, 600);
+        }
+      });
+    });
+  }
+
+  updateView();
+}
+
+// 4. ストループ色あてクイズ（3問連続）
+function renderStroopChallenge(card) {
+  let step = 1;
+  const colorList = [
+    { text: '赤', color: '#e74c3c' },
+    { text: '青', color: '#3498db' },
+    { text: '緑', color: '#2ecc71' },
+    { text: '黄', color: '#f1c40f' }
+  ];
+
+  function generateQuestion() {
+    const textIdx = Math.floor(Math.random() * colorList.length);
+    let colorIdx = Math.floor(Math.random() * colorList.length);
+    // 文字と色は不一致にする
+    while (colorIdx === textIdx) {
+      colorIdx = Math.floor(Math.random() * colorList.length);
+    }
+    return {
+      word: colorList[textIdx].text,
+      displayColor: colorList[colorIdx].color,
+      correctAnswer: colorList[colorIdx].text
+    };
+  }
+
+  let currentQ = generateQuestion();
+
+  function updateView() {
+    card.innerHTML = `
+      ${createChallengeHeader('🎨 色あてテスト (文字の「色」は何色？)')}
+      <div class="ybr-math-qnum">第 ${step} / 3 問</div>
+      <div class="ybr-stroop-word" style="color: ${currentQ.displayColor};">${currentQ.word}</div>
+      <div class="ybr-stroop-options">
+        ${colorList.map(c => `
+          <button class="ybr-stroop-btn" data-color="${c.text}">${c.text}</button>
+        `).join('')}
+      </div>
+      <div class="ybr-feedback-msg" id="ybr-stroop-feedback"></div>
+    `;
+
+    const cancelBtn = card.querySelector('#ybr-challenge-cancel-btn');
+    if (cancelBtn) cancelBtn.addEventListener('click', () => renderBlockDefaultUI(card));
+
+    const btns = card.querySelectorAll('.ybr-stroop-btn');
+    const feedback = card.querySelector('#ybr-stroop-feedback');
+
+    btns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const selected = btn.getAttribute('data-color');
+        if (selected === currentQ.correctAnswer) {
+          step++;
+          if (step > 3) {
+            handleChallengeClear(card);
+          } else {
+            currentQ = generateQuestion();
+            updateView();
+          }
+        } else {
+          if (feedback) {
+            feedback.className = 'ybr-feedback-msg error';
+            feedback.textContent = '不正解！第1問からやり直しです';
+          }
+          step = 1;
+          currentQ = generateQuestion();
+          setTimeout(() => updateView(), 700);
+        }
+      });
+    });
+  }
+
+  updateView();
+}
+
+// 5. 逃げるボタン捕獲（5回クリック）
+function renderCatchChallenge(card) {
+  let count = 0;
+
+  card.innerHTML = `
+    ${createChallengeHeader('🎯 逃げるボタン捕獲')}
+    <p class="ybr-challenge-desc">逃げ回るボタンを5回捕獲してください (捕獲: <span id="ybr-catch-count">0</span> / 5)</p>
+    <div class="ybr-catch-arena" id="ybr-catch-arena">
+      <button class="ybr-catch-target-btn" id="ybr-catch-target" style="top: 40%; left: 40%;">捕まえて！</button>
+    </div>
+  `;
+
+  const cancelBtn = card.querySelector('#ybr-challenge-cancel-btn');
+  if (cancelBtn) cancelBtn.addEventListener('click', () => renderBlockDefaultUI(card));
+
+  const targetBtn = card.querySelector('#ybr-catch-target');
+  const countEl = card.querySelector('#ybr-catch-count');
+
+  function jumpButton() {
+    const top = Math.floor(Math.random() * 70) + 10;
+    const left = Math.floor(Math.random() * 70) + 10;
+    targetBtn.style.top = `${top}%`;
+    targetBtn.style.left = `${left}%`;
+  }
+
+  if (targetBtn) {
+    // マウスが近づくとたまに逃げる
+    targetBtn.addEventListener('mouseenter', () => {
+      if (Math.random() < 0.45) {
+        jumpButton();
+      }
+    });
+
+    targetBtn.addEventListener('click', () => {
+      count++;
+      if (countEl) countEl.textContent = count;
+      if (count >= 5) {
+        handleChallengeClear(card);
+      } else {
+        targetBtn.textContent = `あと ${5 - count}回！`;
+        jumpButton();
+      }
+    });
+  }
+}
+
+// ランダムチャレンジ開始
+function startRandomChallenge(card, forceType = null) {
+  card.classList.add('ybr-challenge-active');
+  const types = ['typing', 'math', 'touch', 'stroop', 'catch'];
+  const type = forceType || types[Math.floor(Math.random() * types.length)];
+
+  switch (type) {
+    case 'typing':
+      renderTypingChallenge(card);
+      break;
+    case 'math':
+      renderMathChallenge(card);
+      break;
+    case 'touch':
+      renderTouchChallenge(card);
+      break;
+    case 'stroop':
+      renderStroopChallenge(card);
+      break;
+    case 'catch':
+      renderCatchChallenge(card);
+      break;
+    default:
+      renderTypingChallenge(card);
+  }
+}
+
 // デイリー制限オーバーレイの表示
 function showBlockOverlay() {
   if (isBlocked) return;
@@ -324,14 +785,11 @@ function showBlockOverlay() {
   
   const overlay = document.createElement('div');
   overlay.id = 'yt-break-reminder-block-overlay';
-  overlay.innerHTML = `
-    <div class="ybr-card">
-      <div class="ybr-icon">⏳</div>
-      <h1>本日のYouTubeは終了です</h1>
-      <p>今日の視聴・ブラウジング時間が制限時間（${formatTime(limitSeconds)}）に達しました。</p>
-      <p class="ybr-subtext">明日のリセットをお楽しみに。今日やりたかった他のことに時間を使いましょう！</p>
-    </div>
-  `;
+  const card = document.createElement('div');
+  card.className = 'ybr-card';
+  overlay.appendChild(card);
+  renderBlockDefaultUI(card);
+
   document.body.appendChild(overlay);
   
   // ユーザーがHTML要素を消せないように、要素の削除を防止（簡易的なMutationObserver）
@@ -598,6 +1056,14 @@ if (typeof module !== 'undefined') {
     removeBlockOverlay,
     blockKeyUntilRelease,
     isScrollOrMediaKey,
-    formatTime
+    formatTime,
+    renderBlockDefaultUI,
+    startRandomChallenge,
+    handleChallengeClear,
+    renderTypingChallenge,
+    renderMathChallenge,
+    renderTouchChallenge,
+    renderStroopChallenge,
+    renderCatchChallenge
   };
 }

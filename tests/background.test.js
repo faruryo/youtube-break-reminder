@@ -14,7 +14,11 @@ global.chrome = {
   },
   runtime: {
     onInstalled: { addListener: jest.fn() },
-    onMessage: { addListener: jest.fn() }
+    onMessage: {
+      addListener: jest.fn((handler) => {
+        registeredMessageHandler = handler;
+      })
+    }
   }
 };
 
@@ -24,6 +28,8 @@ global.document = {
   querySelectorAll: jest.fn().mockReturnValue([]),
   getElementById: jest.fn().mockReturnValue({ addEventListener: jest.fn(), classList: { add: jest.fn(), remove: jest.fn() }, style: {} })
 };
+
+let registeredMessageHandler = null;
 
 const background = require('../background');
 const popup = require('../popup');
@@ -440,4 +446,156 @@ describe('YouTube Break Reminder - background.js Tests', () => {
       expect(monthly.hourly[8]).toBe(6000);
     });
   });
+
+  describe('checkAndResetDate() - Extension Reset Logic', () => {
+    it('should reset todayExtendedSeconds and todayExtensionCount when date changes', async () => {
+      // 2026-07-06 10:00:00 JST (Monday)
+      jest.setSystemTime(new Date('2026-07-06T10:00:00+09:00'));
+
+      chrome.storage.local.get.mockResolvedValue({
+        lastActiveDate: '2026-07-05',
+        resetHour: 4,
+        limitSeconds_1: 5400
+      });
+
+      const resetOccurred = await background.checkAndResetDate();
+
+      expect(resetOccurred).toBe(true);
+      expect(chrome.storage.local.set).toHaveBeenCalledWith({
+        todaySeconds: 0,
+        continuousSeconds: 0,
+        todayExtensionCount: 0,
+        todayExtendedSeconds: 0,
+        lastActiveDate: '2026-07-06',
+        limitSeconds: 5400
+      });
+      expect(chrome.action.setBadgeText).toHaveBeenCalled();
+    });
+
+    it('should NOT reset if business date is unchanged', async () => {
+      jest.setSystemTime(new Date('2026-07-06T10:00:00+09:00'));
+
+      chrome.storage.local.get.mockResolvedValue({
+        lastActiveDate: '2026-07-06',
+        resetHour: 4
+      });
+
+      const resetOccurred = await background.checkAndResetDate();
+
+      expect(resetOccurred).toBe(false);
+      expect(chrome.storage.local.set).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('EXTEND_TIME Message Handler', () => {
+    let messageHandler;
+
+    beforeEach(() => {
+      messageHandler = registeredMessageHandler;
+    });
+
+    it('should successfully extend time when extension limit is not reached', async () => {
+      jest.setSystemTime(new Date('2026-07-06T10:00:00+09:00'));
+
+      chrome.storage.local.get.mockImplementation((keys) => {
+        if (keys.includes && keys.includes('lastActiveDate')) {
+          return Promise.resolve({ lastActiveDate: '2026-07-06', resetHour: 4 });
+        }
+        return Promise.resolve({
+          limitSeconds: 5400, // 90m
+          todaySeconds: 5400,
+          extensionMinutes: 30,
+          maxExtensionsPerDay: 1,
+          todayExtensionCount: 0,
+          todayExtendedSeconds: 0
+        });
+      });
+
+      const sendResponse = jest.fn();
+      messageHandler({ type: 'EXTEND_TIME' }, {}, sendResponse);
+
+      // 非同期完了を待つ
+      await flushPromises();
+
+      expect(chrome.storage.local.set).toHaveBeenCalledWith({
+        todayExtendedSeconds: 1800,
+        todayExtensionCount: 1
+      });
+      expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({
+        success: true,
+        todayExtendedSeconds: 1800,
+        todayExtensionCount: 1,
+        effectiveLimitSeconds: 7200,
+        secondsAdded: 1800,
+        extensionMinutes: 30
+      }));
+    });
+
+    it('should reject extension when max extensions limit is reached', async () => {
+      jest.setSystemTime(new Date('2026-07-06T10:00:00+09:00'));
+
+      chrome.storage.local.get.mockImplementation((keys) => {
+        if (keys.includes && keys.includes('lastActiveDate')) {
+          return Promise.resolve({ lastActiveDate: '2026-07-06', resetHour: 4 });
+        }
+        return Promise.resolve({
+          limitSeconds: 5400,
+          todaySeconds: 7200,
+          extensionMinutes: 30,
+          maxExtensionsPerDay: 1,
+          todayExtensionCount: 1,
+          todayExtendedSeconds: 1800
+        });
+      });
+
+      const sendResponse = jest.fn();
+      messageHandler({ type: 'EXTEND_TIME' }, {}, sendResponse);
+
+      await flushPromises();
+
+      expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({
+        success: false,
+        reason: 'MAX_REACHED'
+      }));
+    });
+
+    it('should allow multiple extensions when maxExtensionsPerDay is -1 (unlimited)', async () => {
+      jest.setSystemTime(new Date('2026-07-06T10:00:00+09:00'));
+
+      chrome.storage.local.get.mockImplementation((keys) => {
+        if (keys.includes && keys.includes('lastActiveDate')) {
+          return Promise.resolve({ lastActiveDate: '2026-07-06', resetHour: 4 });
+        }
+        return Promise.resolve({
+          limitSeconds: 5400,
+          todaySeconds: 9000,
+          extensionMinutes: 30,
+          maxExtensionsPerDay: -1, // Unlimited
+          todayExtensionCount: 2,
+          todayExtendedSeconds: 3600
+        });
+      });
+
+      const sendResponse = jest.fn();
+      messageHandler({ type: 'EXTEND_TIME' }, {}, sendResponse);
+
+      await flushPromises();
+
+      expect(chrome.storage.local.set).toHaveBeenCalledWith({
+        todayExtendedSeconds: 5400,
+        todayExtensionCount: 3
+      });
+      expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({
+        success: true,
+        todayExtendedSeconds: 5400,
+        todayExtensionCount: 3
+      }));
+    });
+  });
 });
+
+async function flushPromises() {
+  for (let i = 0; i < 30; i++) {
+    await Promise.resolve();
+  }
+}
