@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Challenge Playground</title>
+  <link rel="stylesheet" href="../content.css">
+  <style>
+    body { margin: 0; min-height: 100vh; background: #0f0f0f; color: #eee; font-family: system-ui, sans-serif; }
+    .pg-toolbar { position: absolute; top: 12px; left: 12px; display: flex; flex-wrap: wrap; gap: 6px; z-index: 1; }
+    .pg-toolbar button { padding: 6px 10px; border: 1px solid #555; border-radius: 8px; background: #222; color: #eee; cursor: pointer; font-size: 13px; }
+    .pg-toolbar button:hover { background: #333; }
+  </style>
+</head>
+<body>
+  <p style="padding: 64px 16px 0">ブロック画面を閉じたときはここに戻ります。上のボタンで再表示できます。</p>
+
+  <!-- content.js が使う chrome API のスタブ。常に「上限到達・延長可能」を返す -->
+  <script>
+    const pgStatus = {
+      todaySeconds: 5400,
+      limitSeconds: 5400,
+      breakIntervalSeconds: 1800,
+      continuousSeconds: 0,
+      todayExtendedSeconds: 0,
+      todayExtensionCount: 0,
+      maxExtensionsPerDay: 1,
+      extensionMinutes: 30
+    };
+    window.chrome = {
+      runtime: {
+        lastError: undefined,
+        sendMessage(msg, cb) {
+          const reply = {
+            GET_STATUS: pgStatus,
+            HEARTBEAT: { success: true, ...pgStatus, limitExceeded: true },
+            // 延長回数は増やさず、何度でもクリアを試せるようにする
+            EXTEND_TIME: { success: true, ...pgStatus, todayExtendedSeconds: 1800, limitExceeded: false }
+          }[msg.type] || { success: true };
+          if (cb) setTimeout(() => cb(reply), 0);
+        }
+      },
+      storage: {
+        local: { get: async () => ({ isDebugEnabled: false }), set: async () => {} },
+        onChanged: { addListener() {} }
+      }
+    };
+  </script>
+  <script src="../content.js"></script>
+  <script>
+    const PG_TYPES = [
+      ['typing', '✍️ タイピング'],
+      ['math', '🧠 暗算'],
+      ['touch', '🔢 数字タッチ'],
+      ['stroop', '🎨 色あて'],
+      ['catch', '🎯 逃げるボタン'],
+      [null, '🎲 ランダム']
+    ];
+
+    function pgCard() {
+      if (!document.getElementById('yt-break-reminder-block-overlay')) showBlockOverlay();
+      return document.querySelector('#yt-break-reminder-block-overlay .ybr-card');
+    }
+
+    function pgToolbar() {
+      const bar = document.createElement('div');
+      bar.className = 'pg-toolbar';
+      for (const [type, label] of PG_TYPES) {
+        const btn = document.createElement('button');
+        btn.textContent = label;
+        btn.addEventListener('click', () => startRandomChallenge(pgCard(), type));
+        bar.appendChild(btn);
+      }
+      const home = document.createElement('button');
+      home.textContent = '↩︎ ブロック画面';
+      home.addEventListener('click', () => renderBlockDefaultUI(pgCard()));
+      bar.appendChild(home);
+      return bar;
+    }
+
+    document.body.prepend(pgToolbar());
+    // オーバーレイは z-index 最大で全画面を覆うので、出るたびにその中へ操作パネルを差し込む
+    new MutationObserver(() => {
+      const overlay = document.getElementById('yt-break-reminder-block-overlay');
+      if (overlay && !overlay.querySelector('.pg-toolbar')) overlay.appendChild(pgToolbar());
+    }).observe(document.body, { childList: true });
+  </script>
+</body>
+</html>

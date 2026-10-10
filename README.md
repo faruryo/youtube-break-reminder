@@ -56,6 +56,8 @@ npm install
 npm test
 ```
 
+延長チャレンジのミニゲームは、拡張を読み込まずに `dev/playground.html` をブラウザで開くと、種類を選んで試せます（`chrome` API はページ内でスタブしています）。
+
 ## 📄 ライセンス
 
 このプロジェクトは [MIT License](LICENSE) のもとで公開されています。
