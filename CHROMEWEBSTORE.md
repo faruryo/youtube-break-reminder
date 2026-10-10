@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — YouTube Break Reminder
 
-> Last Updated: 2026-09-12
+> Last Updated: 2026-10-11
 
 ## Store Listing
 
@@ -126,6 +126,6 @@ https://github.com/faruryo/youtube-break-reminder/blob/main/PRIVACY.md
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
-| 1.1.0 | 2026-10-10 | 試練付き当日限定・延長チャレンジ機能、1日最大延長回数設定、エッジケース改善 | Pending Release |
+| 1.1.0 | 2026-10-11 | 試練付き当日限定・延長チャレンジ機能、1日最大延長回数設定、エッジケース改善 | Pending Release |
 | 1.0.1 | 2026-09-12 | 休憩オーバーレイの再開ボタンをSpace/Enter操作に対応、操作性向上と誤操作防止 | Published |
 | 1.0.0 | 2026-08-27 | 初回リリース（タイマー、曜日別制限、休憩促進、日別/週別/月別の時間帯別レポート） | Published |
