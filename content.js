@@ -18,6 +18,16 @@ let breakCountdownInterval = null;
 let breakKeydownListener = null;
 let breakClickListener = null;
 let blockKeydownListener = null;
+// ブロック画面やチャレンジを描き直すたびに進める。古いチャレンジが予約した再描画を無効にするため
+let challengeGeneration = 0;
+
+// 予約時と同じチャレンジが表示されている間だけ fn を実行する
+function scheduleInChallenge(fn, ms) {
+  const generation = challengeGeneration;
+  setTimeout(() => {
+    if (generation === challengeGeneration) fn();
+  }, ms);
+}
 
 // ユーザーのアクティビティを監視するための変数
 let lastInteractionTime = Date.now();
@@ -366,6 +376,7 @@ function handleBlockKeydown(e) {
 
 // デイリー制限オーバーレイのデフォルトカード描画
 function renderBlockDefaultUI(card) {
+  challengeGeneration++;
   card.classList.remove('ybr-challenge-active');
   const canExtend = maxExtensionsPerDay === -1 || todayExtensionCount < maxExtensionsPerDay;
   let extendHtml = '';
@@ -641,7 +652,7 @@ function renderMathChallenge(card) {
         input.value = '';
         step = 1;
         currentQ = generateQuestion(step);
-        setTimeout(() => updateView(), 900);
+        scheduleInChallenge(() => updateView(), 900);
       }
     };
 
@@ -703,7 +714,7 @@ function renderTouchChallenge(card) {
             feedback.className = 'ybr-feedback-msg error';
             feedback.textContent = 'ミス！1からやり直しです';
           }
-          setTimeout(() => {
+          scheduleInChallenge(() => {
             renderTouchChallenge(card);
           }, 600);
         }
@@ -777,7 +788,7 @@ function renderStroopChallenge(card) {
           }
           step = 1;
           currentQ = generateQuestion();
-          setTimeout(() => updateView(), 700);
+          scheduleInChallenge(() => updateView(), 700);
         }
       });
     });
@@ -834,6 +845,7 @@ function renderCatchChallenge(card) {
 
 // ランダムチャレンジ開始
 function startRandomChallenge(card, forceType = null) {
+  challengeGeneration++;
   card.classList.add('ybr-challenge-active');
   const types = ['typing', 'math', 'touch', 'stroop', 'catch'];
   const type = forceType || types[Math.floor(Math.random() * types.length)];

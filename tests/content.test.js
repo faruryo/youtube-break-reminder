@@ -1058,5 +1058,33 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
 
       expect(document.getElementById('yt-break-reminder-block-overlay') !== null).toBe(keepBlocked);
     });
+
+    it('does not let a wrong-answer redraw overwrite the block screen after giving up', () => {
+      const els = {};
+      const card = {
+        innerHTML: '',
+        classList: { add: jest.fn(), remove: jest.fn() },
+        querySelectorAll: jest.fn(() => []),
+        querySelector: jest.fn((sel) => {
+          els[sel] = els[sel] || {
+            value: '', textContent: '', className: '', style: {}, handlers: {},
+            classList: { add: jest.fn(), remove: jest.fn() },
+            addEventListener(type, fn) { this.handlers[type] = fn; },
+            focus: jest.fn()
+          };
+          return els[sel];
+        })
+      };
+
+      content.startRandomChallenge(card, 'math');
+      els['#ybr-math-input'].value = '-1';
+      els['#ybr-math-submit'].handlers.click();
+      els['#ybr-challenge-cancel-btn'].handlers.click();
+      expect(card.innerHTML).not.toContain('ybr-math-formula');
+
+      jest.advanceTimersByTime(1000);
+
+      expect(card.innerHTML).not.toContain('ybr-math-formula');
+    });
   });
 });
