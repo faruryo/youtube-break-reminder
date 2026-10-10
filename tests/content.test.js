@@ -19,9 +19,9 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
       },
       storage: {
         local: {
-          get: jest.fn().mockResolvedValue({ isDebugEnabled: false }),
-          onChanged: { addListener: jest.fn() }
-        }
+          get: jest.fn().mockResolvedValue({ isDebugEnabled: false })
+        },
+        onChanged: { addListener: jest.fn() }
       }
     };
 
@@ -52,6 +52,11 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
           },
           focus: jest.fn(),
           blur: jest.fn(),
+          addEventListener: jest.fn(),
+          removeEventListener: jest.fn(),
+          contains: jest.fn(() => true),
+          querySelector: jest.fn().mockReturnValue(null),
+          querySelectorAll: jest.fn().mockReturnValue([]),
           remove: jest.fn(() => {
             if (el.id) elementsMap.delete(el.id);
           }),
@@ -652,9 +657,15 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
   });
 
   describe('Extension Challenges & Block Overlay Tests', () => {
-    it('handleBlockKeydown should allow input when target is INPUT element', () => {
+    it('handleBlockKeydown should allow input when target is INPUT element inside block overlay without stopping capture propagation', () => {
+      const mockOverlay = document.createElement('div');
+      mockOverlay.id = 'yt-break-reminder-block-overlay';
+      const mockInput = document.createElement('input');
+      mockOverlay.appendChild(mockInput);
+      document.body.appendChild(mockOverlay);
+
       const mockEvent = {
-        target: { tagName: 'INPUT' },
+        target: mockInput,
         code: 'KeyA',
         key: 'a',
         preventDefault: jest.fn(),
@@ -665,7 +676,28 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
       content.handleBlockKeydown(mockEvent);
 
       expect(mockEvent.preventDefault).not.toHaveBeenCalled();
+      expect(mockEvent.stopPropagation).not.toHaveBeenCalled();
+      mockOverlay.remove();
+    });
+
+    it('handleBlockKeydown should block keys when target is an INPUT element outside overlay (e.g. YouTube search bar)', () => {
+      const mockOutsideInput = document.createElement('input');
+      document.body.appendChild(mockOutsideInput);
+
+      const mockEvent = {
+        target: mockOutsideInput,
+        code: 'KeyA',
+        key: 'a',
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+
+      content.handleBlockKeydown(mockEvent);
+
+      expect(mockEvent.preventDefault).toHaveBeenCalled();
       expect(mockEvent.stopPropagation).toHaveBeenCalled();
+      mockOutsideInput.remove();
     });
 
     it('handleBlockKeydown should block regular keys when not in an input field', () => {
@@ -739,6 +771,292 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
         expect.any(Function)
       );
       expect(card.innerHTML).toContain('試練クリア！');
+    });
+
+    it('handleChallengeClear should not remove overlay or resume videos if EXTEND_TIME fails', () => {
+      jest.useFakeTimers();
+      const card = {
+        innerHTML: '',
+        querySelector: jest.fn().mockReturnValue(null),
+        classList: { remove: jest.fn() }
+      };
+
+      const mockVideo = { paused: true, play: jest.fn().mockResolvedValue() };
+      document.querySelector = jest.fn().mockReturnValue(mockVideo);
+
+      content.showBlockOverlay();
+      expect(document.getElementById('yt-break-reminder-block-overlay')).not.toBeNull();
+
+      chrome.runtime.sendMessage.mockImplementation((msg, cb) => {
+        if (msg.type === 'EXTEND_TIME' && cb) {
+          cb({ success: false, reason: 'MAX_REACHED', message: '本日の延長上限に達しています。' });
+        }
+      });
+
+      content.handleChallengeClear(card);
+
+      expect(card.innerHTML).toContain('延長できませんでした');
+      expect(card.innerHTML).toContain('本日の延長上限に達しています。');
+
+      jest.advanceTimersByTime(2000);
+
+      // オーバーレイが削除されず、動画も再生されていないことを検証
+      expect(document.getElementById('yt-break-reminder-block-overlay')).not.toBeNull();
+      expect(mockVideo.play).not.toHaveBeenCalled();
+      jest.useRealTimers();
+    });
+
+    it('handleChallengeClear should resume video only if it was playing before block overlay', () => {
+      jest.useFakeTimers();
+      const card = {
+        innerHTML: '',
+        classList: { remove: jest.fn() }
+      };
+
+      const mockPlayingVideo = {
+        paused: false,
+        pause: jest.fn(function() { this.paused = true; }),
+        play: jest.fn().mockResolvedValue()
+      };
+
+      document.querySelectorAll = jest.fn().mockReturnValue([mockPlayingVideo]);
+      document.body.appendChild = jest.fn();
+
+      // ブロック表示（この時動画は再生中だった）
+      content.showBlockOverlay();
+      expect(mockPlayingVideo.pause).toHaveBeenCalled();
+
+      chrome.runtime.sendMessage.mockImplementation((msg, cb) => {
+        if (msg.type === 'EXTEND_TIME' && cb) {
+          cb({ success: true, todayExtendedSeconds: 1800, todayExtensionCount: 1, extensionMinutes: 30 });
+        }
+      });
+
+      content.handleChallengeClear(card);
+      jest.advanceTimersByTime(1500);
+
+      // 解除後に動画が再開されたことを確認
+      expect(mockPlayingVideo.play).toHaveBeenCalled();
+      jest.useRealTimers();
+    });
+
+    it('handleChallengeClear should not fallback-play another paused video if tracked video was disconnected', () => {
+      jest.useFakeTimers();
+      const card = {
+        innerHTML: '',
+        querySelector: jest.fn().mockReturnValue(null),
+        classList: { remove: jest.fn() }
+      };
+
+      const disconnectedVideo = {
+        paused: false,
+        pause: jest.fn(function() { this.paused = true; }),
+        play: jest.fn().mockResolvedValue()
+      };
+
+      const otherPausedVideo = {
+        paused: true,
+        play: jest.fn().mockResolvedValue()
+      };
+
+      document.querySelectorAll = jest.fn().mockReturnValue([disconnectedVideo]);
+      document.querySelector = jest.fn().mockReturnValue(otherPausedVideo);
+      document.contains = jest.fn((el) => el !== disconnectedVideo);
+
+      content.showBlockOverlay();
+      expect(disconnectedVideo.pause).toHaveBeenCalled();
+
+      chrome.runtime.sendMessage.mockImplementation((msg, cb) => {
+        if (msg.type === 'EXTEND_TIME' && cb) {
+          cb({ success: true, todayExtendedSeconds: 1800, todayExtensionCount: 1, extensionMinutes: 30 });
+        }
+      });
+
+      content.handleChallengeClear(card);
+      jest.advanceTimersByTime(1500);
+
+      // 切断された動画も、無関係な別の停止中動画も再生されないこと
+      expect(disconnectedVideo.play).not.toHaveBeenCalled();
+      expect(otherPausedVideo.play).not.toHaveBeenCalled();
+      jest.useRealTimers();
+    });
+
+    it('handleBlockKeydown should allow keys when target is inside block overlay', () => {
+      const mockOverlay = document.createElement('div');
+      mockOverlay.id = 'yt-break-reminder-block-overlay';
+      const mockBtn = document.createElement('button');
+      mockOverlay.appendChild(mockBtn);
+      document.body.appendChild(mockOverlay);
+
+      const mockEvent = {
+        target: mockBtn,
+        code: 'Enter',
+        key: 'Enter',
+        preventDefault: jest.fn(),
+        stopPropagation: jest.fn(),
+        stopImmediatePropagation: jest.fn()
+      };
+
+      content.handleBlockKeydown(mockEvent);
+
+      expect(mockEvent.preventDefault).not.toHaveBeenCalled();
+      expect(mockEvent.stopPropagation).not.toHaveBeenCalled();
+      mockOverlay.remove();
+    });
+
+    it('handleChallengeClear should keep block overlay and not resume video if still exceeded after extension', () => {
+      jest.useFakeTimers();
+      const card = {
+        innerHTML: '',
+        querySelector: jest.fn().mockReturnValue(null),
+        classList: { remove: jest.fn() }
+      };
+
+      const mockVideo = { paused: true, play: jest.fn().mockResolvedValue() };
+      document.querySelector = jest.fn().mockReturnValue(mockVideo);
+
+      content.showBlockOverlay();
+      expect(document.getElementById('yt-break-reminder-block-overlay')).not.toBeNull();
+
+      // 制限5400秒(1.5h)に対して現在7200秒(2h)利用中、1800秒(30分)延長しても7200秒 >= 7200秒で上限到達のまま
+      chrome.runtime.sendMessage.mockImplementation((msg, cb) => {
+        if (msg.type === 'EXTEND_TIME' && cb) {
+          cb({
+            success: true,
+            todaySeconds: 7200,
+            todayExtendedSeconds: 1800,
+            todayExtensionCount: 1,
+            extensionMinutes: 30,
+            limitExceeded: true
+          });
+        }
+      });
+
+      content.handleChallengeClear(card);
+
+      expect(card.innerHTML).toContain('本日の利用時間が新しい上限');
+      jest.advanceTimersByTime(2000);
+
+      // オーバーレイが維持され、動画も再生されていないことを検証
+      expect(document.getElementById('yt-break-reminder-block-overlay')).not.toBeNull();
+      expect(mockVideo.play).not.toHaveBeenCalled();
+      jest.useRealTimers();
+    });
+
+    it('handleChallengeClear should re-check limit after 1.2s and keep block overlay if usage increased during delay', async () => {
+      jest.useFakeTimers();
+      let storageChangeHandler;
+      global.chrome.storage.onChanged.addListener = jest.fn((cb) => {
+        storageChangeHandler = cb;
+      });
+
+      jest.isolateModules(() => {
+        content = require('../content');
+      });
+
+      // initを呼んでストレージ変更リスナーを登録
+      chrome.runtime.sendMessage.mockImplementation((msg, cb) => {
+        if (msg.type === 'GET_STATUS' && cb) {
+          cb({
+            todaySeconds: 5000,
+            limitSeconds: 5400,
+            breakIntervalSeconds: 1800,
+            todayExtendedSeconds: 0,
+            todayExtensionCount: 0,
+            maxExtensionsPerDay: 1,
+            extensionMinutes: 30
+          });
+        }
+      });
+      document.visibilityState = 'visible';
+      await content.init();
+
+      const card = {
+        innerHTML: '',
+        querySelector: jest.fn().mockReturnValue(null),
+        classList: { remove: jest.fn() }
+      };
+
+      const mockVideo = { paused: true, play: jest.fn().mockResolvedValue() };
+      document.querySelector = jest.fn().mockReturnValue(mockVideo);
+
+      content.showBlockOverlay();
+      expect(document.getElementById('yt-break-reminder-block-overlay')).not.toBeNull();
+
+      // 延長成功時点では上限内（limit: 5400 + 1800 = 7200, todaySeconds: 7000）
+      chrome.runtime.sendMessage.mockImplementation((msg, cb) => {
+        if (msg.type === 'EXTEND_TIME' && cb) {
+          cb({
+            success: true,
+            todaySeconds: 7000,
+            todayExtendedSeconds: 1800,
+            todayExtensionCount: 1,
+            extensionMinutes: 30,
+            limitExceeded: false
+          });
+        }
+      });
+
+      content.handleChallengeClear(card);
+      expect(card.innerHTML).toContain('延長されました');
+
+      // 1.2秒待機中に別タブの利用時間増加で todaySeconds が 7300（> 7200）に更新されたとする
+      if (storageChangeHandler) {
+        storageChangeHandler({
+          todaySeconds: { newValue: 7300, oldValue: 7000 }
+        }, 'local');
+      }
+
+      // 1200ms タイマーを進める
+      jest.advanceTimersByTime(1200);
+
+      // 上限を超過したため、オーバーレイは解除されず制限画面が維持され、動画も再生されないこと
+      expect(document.getElementById('yt-break-reminder-block-overlay')).not.toBeNull();
+      expect(mockVideo.play).not.toHaveBeenCalled();
+      expect(card.innerHTML).toContain('超過しているため、引き続き制限中です');
+      jest.useRealTimers();
+    });
+
+    it.each([
+      [7300, true],
+      [5400, false]
+    ])('todayExtendedSeconds change while blocked re-checks with latest todaySeconds=%i (keep blocked: %s)', async (latestTodaySeconds, keepBlocked) => {
+      let storageChangeHandler;
+      global.chrome.storage.onChanged.addListener = jest.fn((cb) => {
+        storageChangeHandler = cb;
+      });
+
+      jest.isolateModules(() => {
+        content = require('../content');
+      });
+
+      const baseStatus = {
+        todaySeconds: 5400,
+        limitSeconds: 5400,
+        breakIntervalSeconds: 1800,
+        todayExtendedSeconds: 0,
+        todayExtensionCount: 0,
+        maxExtensionsPerDay: 1,
+        extensionMinutes: 30
+      };
+      chrome.runtime.sendMessage.mockImplementation((msg, cb) => {
+        if (msg.type === 'GET_STATUS' && cb) cb(baseStatus);
+      });
+      document.visibilityState = 'visible';
+      await content.init();
+      expect(document.getElementById('yt-break-reminder-block-overlay')).not.toBeNull();
+
+      // 別タブで延長された。手元の todaySeconds(5400) は古く、最新値は background だけが知っている
+      chrome.runtime.sendMessage.mockImplementation((msg, cb) => {
+        if (msg.type === 'GET_STATUS' && cb) {
+          cb({ ...baseStatus, todaySeconds: latestTodaySeconds, todayExtendedSeconds: 1800, todayExtensionCount: 1 });
+        }
+      });
+      storageChangeHandler({ todayExtendedSeconds: { newValue: 1800, oldValue: 0 } }, 'local');
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(document.getElementById('yt-break-reminder-block-overlay') !== null).toBe(keepBlocked);
     });
   });
 });

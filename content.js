@@ -46,7 +46,6 @@ async function init() {
   // 初期状態で既に制限時間を超えているか確認
   if (todaySeconds >= limitSeconds + todayExtendedSeconds) {
     showBlockOverlay();
-    return;
   }
   
   // ハートビート計測を開始
@@ -68,7 +67,18 @@ async function init() {
       }
       if (changes.todayExtendedSeconds) {
         todayExtendedSeconds = changes.todayExtendedSeconds.newValue || 0;
-        checkDailyLimit();
+        if (isBlocked && !changes.todaySeconds) {
+          // 手元の todaySeconds は古い可能性があるため、解除判定は background の最新値で行う（取得失敗時はブロック維持）
+          getStatusFromBackground().then((status) => {
+            if (!status || status.error) return;
+            todaySeconds = status.todaySeconds;
+            limitSeconds = status.limitSeconds;
+            todayExtendedSeconds = status.todayExtendedSeconds;
+            checkDailyLimit();
+          });
+        } else {
+          checkDailyLimit();
+        }
       }
       if (changes.todayExtensionCount) {
         todayExtensionCount = changes.todayExtensionCount.newValue || 0;
@@ -228,8 +238,8 @@ function pauseAllVideos() {
   return paused;
 }
 
-// 動画の自動再生
-function resumeVideos() {
+// 動画の自動再生（ブロック時はフォールバック無効で元から再生中だった要素のみ再開、休憩後はフォールバック許可）
+function resumeVideos(allowFallback = true) {
   let resumed = false;
   if (pausedVideosToResume && pausedVideosToResume.length > 0) {
     pausedVideosToResume.forEach(video => {
@@ -244,8 +254,8 @@ function resumeVideos() {
     pausedVideosToResume = [];
   }
 
-  // 記録されていた要素が再開されなかった（または記録が空だった）場合のフォールバック
-  if (!resumed) {
+  // 休憩オーバーレイの再開ボタン押下時など、明示的に許可された場合のみフォールバック
+  if (!resumed && allowFallback) {
     const mainVideo = document.querySelector('video.html5-main-video') || document.querySelector('video');
     if (mainVideo && mainVideo.paused) {
       mainVideo.play().catch(err => {
@@ -323,12 +333,15 @@ function blockKeyUntilRelease(releasedCode, releasedKey) {
 
 // デイリー制限オーバーレイ表示中のキー入力ハンドラ
 function handleBlockKeydown(e) {
-  // チャレンジ内のinput/textareaに入力している最中は、文字入力を許可
   const target = e.target;
-  const isInputActive = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA');
-  if (isInputActive) {
-    // Spaceキー等による背後動画の再生・スクロールを防ぐためイベント伝播のみ遮断
-    e.stopPropagation();
+  const overlay = document.getElementById('yt-break-reminder-block-overlay');
+  const isInsideOverlay = overlay && (
+    (typeof overlay.contains === 'function' ? overlay.contains(target) : false) ||
+    target === overlay
+  );
+  // オーバーレイ内部の要素（ボタンや入力欄など）に対するキーボード操作はキャプチャ段階で遮断しない
+  // （要素自身へイベントを届け、入力やEnter判定、Tabキー移動を正常動作させるため）
+  if (isInsideOverlay) {
     return;
   }
 
@@ -387,7 +400,7 @@ function renderBlockDefaultUI(card) {
     ${extendHtml}
   `;
 
-  const startBtn = card.querySelector('#ybr-start-challenge-btn');
+  const startBtn = typeof card.querySelector === 'function' ? card.querySelector('#ybr-start-challenge-btn') : null;
   if (startBtn) {
     startBtn.addEventListener('click', () => {
       startRandomChallenge(card);
@@ -410,9 +423,9 @@ function updateBlockOverlayUI() {
 function handleChallengeClear(card) {
   card.innerHTML = `
     <div class="ybr-clear-view">
-      <div class="ybr-clear-icon">🎉</div>
+      <div class="ybr-clear-icon">⏳</div>
       <div class="ybr-clear-title">試練クリア！</div>
-      <div class="ybr-clear-msg">${extensionMinutes}分 延長されました。<br>動画を再開します...</div>
+      <div class="ybr-clear-msg">延長を反映しています...</div>
     </div>
   `;
 
@@ -420,11 +433,83 @@ function handleChallengeClear(card) {
     if (response && response.success) {
       todayExtendedSeconds = response.todayExtendedSeconds;
       todayExtensionCount = response.todayExtensionCount;
+      if (response.todaySeconds !== undefined) todaySeconds = response.todaySeconds;
+      const effectiveLimit = limitSeconds + todayExtendedSeconds;
+      const isStillExceeded = response.limitExceeded !== undefined
+        ? response.limitExceeded
+        : (todaySeconds >= effectiveLimit);
+      const addedMins = response.extensionMinutes || extensionMinutes;
+
+      if (!isStillExceeded) {
+        card.innerHTML = `
+          <div class="ybr-clear-view">
+            <div class="ybr-clear-icon">🎉</div>
+            <div class="ybr-clear-title">試練クリア！</div>
+            <div class="ybr-clear-msg">${addedMins}分 延長されました。<br>${shouldResumeVideo ? '動画を再開します...' : '制限を解除しました。'}</div>
+          </div>
+        `;
+
+        setTimeout(() => {
+          // 待機中に利用時間が増加または設定上限が引き下げられ、超過状態になっていないか再確認
+          const currentEffectiveLimit = limitSeconds + todayExtendedSeconds;
+          if (todaySeconds >= currentEffectiveLimit) {
+            card.innerHTML = `
+              <div class="ybr-clear-view">
+                <div class="ybr-clear-icon">🎉</div>
+                <div class="ybr-clear-title">試練クリア！</div>
+                <div class="ybr-clear-msg">${addedMins}分 延長されましたが、利用時間が新しい上限（${formatTime(currentEffectiveLimit)}）を超過しているため、引き続き制限中です。</div>
+                <button id="ybr-back-to-block-btn" class="ybr-challenge-btn" style="margin-top: 16px;">戻る</button>
+              </div>
+            `;
+            const backBtn = card.querySelector('#ybr-back-to-block-btn');
+            if (backBtn) {
+              backBtn.addEventListener('click', () => {
+                renderBlockDefaultUI(card);
+              });
+            }
+            return;
+          }
+
+          removeBlockOverlay();
+          if (shouldResumeVideo) {
+            resumeVideos(false);
+          } else {
+            pausedVideosToResume = [];
+          }
+        }, 1200);
+      } else {
+        card.innerHTML = `
+          <div class="ybr-clear-view">
+            <div class="ybr-clear-icon">🎉</div>
+            <div class="ybr-clear-title">試練クリア！</div>
+            <div class="ybr-clear-msg">${addedMins}分 延長されましたが、本日の利用時間が新しい上限（${formatTime(effectiveLimit)}）を超過しているため、引き続き制限中です。</div>
+            <button id="ybr-back-to-block-btn" class="ybr-challenge-btn" style="margin-top: 16px;">戻る</button>
+          </div>
+        `;
+        const backBtn = card.querySelector('#ybr-back-to-block-btn');
+        if (backBtn) {
+          backBtn.addEventListener('click', () => {
+            renderBlockDefaultUI(card);
+          });
+        }
+      }
+    } else {
+      const reasonMsg = (response && response.message) || '延長処理に失敗しました。本日の上限に達した可能性があります。';
+      card.innerHTML = `
+        <div class="ybr-clear-view">
+          <div class="ybr-clear-icon">⚠️</div>
+          <div class="ybr-clear-title">延長できませんでした</div>
+          <div class="ybr-clear-msg">${reasonMsg}</div>
+          <button id="ybr-back-to-block-btn" class="ybr-challenge-btn" style="margin-top: 16px;">戻る</button>
+        </div>
+      `;
+      const backBtn = card.querySelector('#ybr-back-to-block-btn');
+      if (backBtn) {
+        backBtn.addEventListener('click', () => {
+          renderBlockDefaultUI(card);
+        });
+      }
     }
-    setTimeout(() => {
-      removeBlockOverlay();
-      resumeVideos();
-    }, 1200);
   });
 }
 
@@ -778,13 +863,31 @@ function startRandomChallenge(card, forceType = null) {
 function showBlockOverlay() {
   if (isBlocked) return;
   isBlocked = true;
-  pauseAllVideos();
+  
+  // 入力欄等にフォーカスが残っていれば外す
+  if (document.activeElement && typeof document.activeElement.blur === 'function') {
+    document.activeElement.blur();
+  }
+  
+  // ブロック開始時に再生中だった動画要素を保持して一時停止
+  pausedVideosToResume = pauseAllVideos();
+  // ブロック開始時に実際に動画が再生中だった場合のみ、解除時に再開する
+  shouldResumeVideo = pausedVideosToResume.length > 0;
   
   // 既存のオーバーレイを削除
   removeBreakOverlay();
   
   const overlay = document.createElement('div');
   overlay.id = 'yt-break-reminder-block-overlay';
+
+  // オーバーレイ内部でのキー入力（文字入力、Enter、Tab等）がYouTube側のグローバルハンドラへ
+  // バブリングして背後の動画操作等を誘発しないよう、オーバーレイ上でバブリングを止める
+  if (typeof overlay.addEventListener === 'function') {
+    overlay.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+    });
+  }
+
   const card = document.createElement('div');
   card.className = 'ybr-card';
   overlay.appendChild(card);
@@ -815,6 +918,11 @@ function removeBlockOverlay() {
   const overlay = document.getElementById('yt-break-reminder-block-overlay');
   if (overlay) overlay.remove();
   isBlocked = false;
+
+  // 計測が開始されていない場合は開始
+  if (!heartbeatIntervalId) {
+    startHeartbeat();
+  }
 }
 
 // 休憩オーバーレイ表示中のキー入力ハンドラ
@@ -878,7 +986,7 @@ function handleBreakKeydown(e) {
 function resumeFromBreak() {
   removeBreakOverlay();
   if (shouldResumeVideo) {
-    resumeVideos();
+    resumeVideos(true);
   } else {
     pausedVideosToResume = [];
   }
@@ -1010,6 +1118,7 @@ function preventVideoPlayback() {
 
 // 要素の削除を監視して復活させる
 function observeOverlayRemoval(elementId) {
+  if (typeof MutationObserver === 'undefined') return;
   const targetNode = document.body;
   const config = { childList: true };
   
@@ -1064,6 +1173,7 @@ if (typeof module !== 'undefined') {
     renderMathChallenge,
     renderTouchChallenge,
     renderStroopChallenge,
-    renderCatchChallenge
+    renderCatchChallenge,
+    init
   };
 }

@@ -19,8 +19,18 @@ global.chrome = {
         registeredMessageHandler = handler;
       })
     }
+  },
+  alarms: {
+    create: jest.fn(),
+    onAlarm: {
+      addListener: jest.fn((handler) => {
+        registeredAlarmHandler = handler;
+      })
+    }
   }
 };
+
+let registeredAlarmHandler = null;
 
 global.document = {
   addEventListener: jest.fn(),
@@ -485,6 +495,26 @@ describe('YouTube Break Reminder - background.js Tests', () => {
       expect(resetOccurred).toBe(false);
       expect(chrome.storage.local.set).not.toHaveBeenCalled();
     });
+
+    it.each(['HEARTBEAT', 'GET_STATUS'])('should reset date inside %s without deadlocking the lock', async (type) => {
+      jest.setSystemTime(new Date('2026-07-06T10:00:00+09:00'));
+
+      chrome.storage.local.get.mockResolvedValue({
+        lastActiveDate: '2026-07-05',
+        resetHour: 4,
+        limitSeconds_1: 5400
+      });
+
+      const sendResponse = jest.fn();
+      registeredMessageHandler({ type }, {}, sendResponse);
+      await flushPromises();
+
+      expect(chrome.storage.local.set).toHaveBeenCalledWith(expect.objectContaining({
+        todaySeconds: 0,
+        lastActiveDate: '2026-07-06'
+      }));
+      expect(sendResponse).toHaveBeenCalled();
+    });
   });
 
   describe('EXTEND_TIME Message Handler', () => {
@@ -589,6 +619,76 @@ describe('YouTube Break Reminder - background.js Tests', () => {
         success: true,
         todayExtendedSeconds: 5400,
         todayExtensionCount: 3
+      }));
+    });
+
+    it('should serialize concurrent EXTEND_TIME requests to prevent race conditions', async () => {
+      jest.setSystemTime(new Date('2026-07-06T10:00:00+09:00'));
+
+      let storedState = {
+        lastActiveDate: '2026-07-06',
+        resetHour: 4,
+        limitSeconds: 5400,
+        todaySeconds: 5400,
+        extensionMinutes: 30,
+        maxExtensionsPerDay: 2,
+        todayExtensionCount: 0,
+        todayExtendedSeconds: 0
+      };
+
+      chrome.storage.local.get.mockImplementation(async () => {
+        await Promise.resolve();
+        return { ...storedState };
+      });
+
+      chrome.storage.local.set.mockImplementation(async (updates) => {
+        await Promise.resolve();
+        Object.assign(storedState, updates);
+      });
+
+      const sendResponse1 = jest.fn();
+      const sendResponse2 = jest.fn();
+
+      // 2つのリクエストを同時に発火
+      messageHandler({ type: 'EXTEND_TIME' }, {}, sendResponse1);
+      messageHandler({ type: 'EXTEND_TIME' }, {}, sendResponse2);
+
+      await flushPromises();
+
+      // 1つ目の要求が成功
+      expect(sendResponse1).toHaveBeenCalledWith(expect.objectContaining({
+        success: true,
+        todayExtensionCount: 1,
+        todayExtendedSeconds: 1800
+      }));
+
+      // 2つ目の要求も直列化されて最新値に基づいて処理され、2回目として成功
+      expect(sendResponse2).toHaveBeenCalledWith(expect.objectContaining({
+        success: true,
+        todayExtensionCount: 2,
+        todayExtendedSeconds: 3600
+      }));
+
+      // 最終的に両方の延長がアトミックに保存されたことを確認
+      expect(storedState.todayExtensionCount).toBe(2);
+      expect(storedState.todayExtendedSeconds).toBe(3600);
+    });
+
+    it('should trigger checkAndResetDate when checkDateAlarm fires', async () => {
+      jest.setSystemTime(new Date('2026-07-07T05:00:00+09:00'));
+      chrome.storage.local.get.mockResolvedValue({
+        lastActiveDate: '2026-07-06',
+        resetHour: 4
+      });
+
+      expect(registeredAlarmHandler).not.toBeNull();
+      await registeredAlarmHandler({ name: background.ALARM_CHECK_DATE });
+
+      expect(chrome.storage.local.set).toHaveBeenCalledWith(expect.objectContaining({
+        todaySeconds: 0,
+        todayExtensionCount: 0,
+        todayExtendedSeconds: 0,
+        lastActiveDate: '2026-07-07'
       }));
     });
   });

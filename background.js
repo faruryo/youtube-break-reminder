@@ -226,7 +226,35 @@ chrome.runtime.onInstalled.addListener(async () => {
   const finalToday = updates.todaySeconds !== undefined ? updates.todaySeconds : (data.todaySeconds || 0);
   const finalExtended = updates.todayExtendedSeconds !== undefined ? updates.todayExtendedSeconds : (data.todayExtendedSeconds || 0);
   await updateBadge(finalToday, activeLimit + finalExtended);
+
+  // 定期的な日付リセット用のアラームを設定
+  setupDateCheckAlarm();
 });
+
+// 定期的な日付リセット・状態チェックのアラーム名
+const ALARM_CHECK_DATE = 'checkDateAlarm';
+
+// アラーム作成（1分間隔）
+function setupDateCheckAlarm() {
+  if (typeof chrome !== 'undefined' && chrome.alarms && typeof chrome.alarms.create === 'function') {
+    chrome.alarms.create(ALARM_CHECK_DATE, { periodInMinutes: 1 });
+  }
+}
+
+// サービスワーカー起動時にもアラームが確実に存在するように初期化
+setupDateCheckAlarm();
+
+if (typeof chrome !== 'undefined' && chrome.alarms && chrome.alarms.onAlarm && typeof chrome.alarms.onAlarm.addListener === 'function') {
+  chrome.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarm && alarm.name === ALARM_CHECK_DATE) {
+      try {
+        await checkAndResetDate();
+      } catch (err) {
+        console.error('Error during scheduled checkAndResetDate:', err);
+      }
+    }
+  });
+}
 
 // バッジ表示を更新する関数
 async function updateBadge(todaySeconds, limitSeconds) {
@@ -252,8 +280,27 @@ async function updateBadge(todaySeconds, limitSeconds) {
   }
 }
 
+// 状態更新（日付リセットや時間延長など）をアトミックに直列化するためのロック
+let stateLock = Promise.resolve();
+
+function runWithLock(fn) {
+  return new Promise((resolve, reject) => {
+    stateLock = stateLock.then(async () => {
+      try {
+        const result = await fn();
+        resolve(result);
+      } catch (err) {
+        reject(err);
+      }
+    }).catch((err) => {
+      reject(err);
+    });
+  });
+}
+
 // 日付が変わっているかチェックし、変わっていればリセットする関数
-async function checkAndResetDate() {
+// runWithLock は再入できないため、ロック保持中の処理からはこちらを直接呼ぶ
+async function checkAndResetDateInternal() {
   const { lastActiveDate, resetHour = 4 } = await chrome.storage.local.get(['lastActiveDate', 'resetHour']);
   const businessToday = getBusinessDateString(resetHour);
   
@@ -267,10 +314,18 @@ async function checkAndResetDate() {
       lastActiveDate: businessToday,
       limitSeconds: activeLimit
     });
-    await updateBadge(0, activeLimit);
+    try {
+      await updateBadge(0, activeLimit);
+    } catch (badgeErr) {
+      console.warn('Failed to update badge on date reset:', badgeErr);
+    }
     return true;
   }
   return false;
+}
+
+async function checkAndResetDate() {
+  return runWithLock(checkAndResetDateInternal);
 }
 
 // 連続利用時間のタイムアウト判定とリセットを行うヘルパー関数
@@ -339,29 +394,93 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'HEARTBEAT') {
     (async () => {
       try {
-        await checkAndResetDate();
-        
-        const now = Date.now();
-        
-        // 950ms未満の重複したハートビート（複数ウィンドウが並んでいる場合など）は無視して、現在の状態を返す
-        if (lastIncrementTime > 0 && (now - lastIncrementTime < 950)) {
+        const response = await runWithLock(async () => {
+          await checkAndResetDateInternal();
+          
+          const now = Date.now();
+          
+          // 950ms未満の重複したハートビート（複数ウィンドウが並んでいる場合など）は無視して、現在の状態を返す
+          if (lastIncrementTime > 0 && (now - lastIncrementTime < 950)) {
+            const data = await chrome.storage.local.get([
+              'todaySeconds',
+              'limitSeconds',
+              'continuousSeconds',
+              'todayExtendedSeconds',
+              'todayExtensionCount',
+              'maxExtensionsPerDay',
+              'extensionMinutes'
+            ]);
+            const todaySeconds = data.todaySeconds || 0;
+            const baseLimit = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
+            const todayExtendedSeconds = data.todayExtendedSeconds || 0;
+            const effectiveLimit = baseLimit + todayExtendedSeconds;
+            const continuousSeconds = data.continuousSeconds || 0;
+            const limitExceeded = todaySeconds >= effectiveLimit;
+            
+            return {
+              success: true,
+              todaySeconds,
+              continuousSeconds,
+              limitExceeded,
+              todayExtendedSeconds,
+              todayExtensionCount: data.todayExtensionCount || 0,
+              maxExtensionsPerDay: data.maxExtensionsPerDay !== undefined ? data.maxExtensionsPerDay : DEFAULT_MAX_EXTENSIONS,
+              extensionMinutes: data.extensionMinutes || DEFAULT_EXTENSION_MINUTES,
+              effectiveLimitSeconds: effectiveLimit
+            };
+          }
+          
+          lastIncrementTime = now;
+          
+          // タイムアウトによるリセットを確認
+          let continuousSeconds = await checkAndResetContinuous();
+          
           const data = await chrome.storage.local.get([
             'todaySeconds',
             'limitSeconds',
-            'continuousSeconds',
+            'lastHeartbeatTime',
             'todayExtendedSeconds',
             'todayExtensionCount',
             'maxExtensionsPerDay',
             'extensionMinutes'
           ]);
-          const todaySeconds = data.todaySeconds || 0;
+          const lastHeartbeatTime = data.lastHeartbeatTime || 0;
           const baseLimit = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
           const todayExtendedSeconds = data.todayExtendedSeconds || 0;
           const effectiveLimit = baseLimit + todayExtendedSeconds;
-          const continuousSeconds = data.continuousSeconds || 0;
-          const limitExceeded = todaySeconds >= effectiveLimit;
           
-          sendResponse({
+          let secondsToAdd = 1; // 基本は1秒加算
+          
+          if (lastHeartbeatTime > 0) {
+            const diff = now - lastHeartbeatTime;
+            if (diff > 1500) { // 1.5秒以上の間隔が空いた場合（別タブ移動や放置）
+              if (diff < 60 * 1000) {
+                // 60秒未満の離脱であれば、その間の実時間（秒）をすべて上乗せ加算（往来時の引き継ぎ）
+                secondsToAdd = Math.floor(diff / 1000);
+              } else {
+                // 60秒以上の離脱であれば、猶予期間の「60秒」だけを加算し、あとは停止していたとみなす
+                secondsToAdd = 60;
+              }
+            }
+          }
+          
+          const todaySeconds = (data.todaySeconds || 0) + secondsToAdd;
+          continuousSeconds += secondsToAdd;
+          
+          await chrome.storage.local.set({ 
+            todaySeconds,
+            continuousSeconds,
+            lastHeartbeatTime: now
+          });
+          await recordUsageHistory(secondsToAdd, now);
+          try {
+            await updateBadge(todaySeconds, effectiveLimit);
+          } catch (badgeErr) {
+            console.warn('Failed to update badge on heartbeat:', badgeErr);
+          }
+          
+          const limitExceeded = todaySeconds >= effectiveLimit;
+          return {
             success: true,
             todaySeconds,
             continuousSeconds,
@@ -371,67 +490,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             maxExtensionsPerDay: data.maxExtensionsPerDay !== undefined ? data.maxExtensionsPerDay : DEFAULT_MAX_EXTENSIONS,
             extensionMinutes: data.extensionMinutes || DEFAULT_EXTENSION_MINUTES,
             effectiveLimitSeconds: effectiveLimit
-          });
-          return;
-        }
-        
-        lastIncrementTime = now;
-        
-        // タイムアウトによるリセットを確認
-        let continuousSeconds = await checkAndResetContinuous();
-        
-        const data = await chrome.storage.local.get([
-          'todaySeconds',
-          'limitSeconds',
-          'lastHeartbeatTime',
-          'todayExtendedSeconds',
-          'todayExtensionCount',
-          'maxExtensionsPerDay',
-          'extensionMinutes'
-        ]);
-        const lastHeartbeatTime = data.lastHeartbeatTime || 0;
-        const baseLimit = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
-        const todayExtendedSeconds = data.todayExtendedSeconds || 0;
-        const effectiveLimit = baseLimit + todayExtendedSeconds;
-        
-        let secondsToAdd = 1; // 基本は1秒加算
-        
-        if (lastHeartbeatTime > 0) {
-          const diff = now - lastHeartbeatTime;
-          if (diff > 1500) { // 1.5秒以上の間隔が空いた場合（別タブ移動や放置）
-            if (diff < 60 * 1000) {
-              // 60秒未満の離脱であれば、その間の実時間（秒）をすべて上乗せ加算（往来時の引き継ぎ）
-              secondsToAdd = Math.floor(diff / 1000);
-            } else {
-              // 60秒以上の離脱であれば、猶予期間の「60秒」だけを加算し、あとは停止していたとみなす
-              secondsToAdd = 60;
-            }
-          }
-        }
-        
-        const todaySeconds = (data.todaySeconds || 0) + secondsToAdd;
-        continuousSeconds += secondsToAdd;
-        
-        await chrome.storage.local.set({ 
-          todaySeconds,
-          continuousSeconds,
-          lastHeartbeatTime: now
+          };
         });
-        await recordUsageHistory(secondsToAdd, now);
-        await updateBadge(todaySeconds, effectiveLimit);
-        
-        const limitExceeded = todaySeconds >= effectiveLimit;
-        sendResponse({
-          success: true,
-          todaySeconds,
-          continuousSeconds,
-          limitExceeded,
-          todayExtendedSeconds,
-          todayExtensionCount: data.todayExtensionCount || 0,
-          maxExtensionsPerDay: data.maxExtensionsPerDay !== undefined ? data.maxExtensionsPerDay : DEFAULT_MAX_EXTENSIONS,
-          extensionMinutes: data.extensionMinutes || DEFAULT_EXTENSION_MINUTES,
-          effectiveLimitSeconds: effectiveLimit
-        });
+
+        sendResponse(response);
       } catch (err) {
         console.error('Error in HEARTBEAT handling:', err);
         sendResponse({ success: false, error: err.message });
@@ -443,90 +505,108 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'GET_STATUS') {
     (async () => {
       try {
-        await checkAndResetDate();
-        // ポップアップを開いた際にもタイムアウトを即座に反映させる
-        const continuousSeconds = await checkAndResetContinuous();
-        
-        const data = await chrome.storage.local.get([
-          'todaySeconds',
-          'limitSeconds',
-          'breakIntervalSeconds',
-          'todayExtendedSeconds',
-          'todayExtensionCount',
-          'maxExtensionsPerDay',
-          'extensionMinutes'
-        ]);
-        const baseLimit = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
-        const todayExtendedSeconds = data.todayExtendedSeconds || 0;
-        const effectiveLimit = baseLimit + todayExtendedSeconds;
+        const response = await runWithLock(async () => {
+          await checkAndResetDateInternal();
+          // ポップアップを開いた際にもタイムアウトを即座に反映させる
+          const continuousSeconds = await checkAndResetContinuous();
+          
+          const data = await chrome.storage.local.get([
+            'todaySeconds',
+            'limitSeconds',
+            'breakIntervalSeconds',
+            'todayExtendedSeconds',
+            'todayExtensionCount',
+            'maxExtensionsPerDay',
+            'extensionMinutes'
+          ]);
+          const baseLimit = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
+          const todayExtendedSeconds = data.todayExtendedSeconds || 0;
+          const effectiveLimit = baseLimit + todayExtendedSeconds;
 
-        sendResponse({
-          todaySeconds: data.todaySeconds || 0,
-          limitSeconds: baseLimit,
-          effectiveLimitSeconds: effectiveLimit,
-          breakIntervalSeconds: data.breakIntervalSeconds || DEFAULT_BREAK_SECONDS,
-          continuousSeconds: continuousSeconds,
-          todayExtendedSeconds: todayExtendedSeconds,
-          todayExtensionCount: data.todayExtensionCount || 0,
-          maxExtensionsPerDay: data.maxExtensionsPerDay !== undefined ? data.maxExtensionsPerDay : DEFAULT_MAX_EXTENSIONS,
-          extensionMinutes: data.extensionMinutes || DEFAULT_EXTENSION_MINUTES
+          return {
+            todaySeconds: data.todaySeconds || 0,
+            limitSeconds: baseLimit,
+            effectiveLimitSeconds: effectiveLimit,
+            breakIntervalSeconds: data.breakIntervalSeconds || DEFAULT_BREAK_SECONDS,
+            continuousSeconds: continuousSeconds,
+            todayExtendedSeconds: todayExtendedSeconds,
+            todayExtensionCount: data.todayExtensionCount || 0,
+            maxExtensionsPerDay: data.maxExtensionsPerDay !== undefined ? data.maxExtensionsPerDay : DEFAULT_MAX_EXTENSIONS,
+            extensionMinutes: data.extensionMinutes || DEFAULT_EXTENSION_MINUTES
+          };
         });
+
+        sendResponse(response);
       } catch (err) {
+        console.error('Error in GET_STATUS handling:', err);
         sendResponse({ error: err.message });
       }
     })();
     return true;
   }
   
+  // 複数タブ・複数リクエストからの延長要求と日付リセットを直列化してアトミックに処理
   if (message.type === 'EXTEND_TIME') {
     (async () => {
       try {
-        await checkAndResetDate();
-        const data = await chrome.storage.local.get([
-          'limitSeconds',
-          'todaySeconds',
-          'extensionMinutes',
-          'maxExtensionsPerDay',
-          'todayExtensionCount',
-          'todayExtendedSeconds'
-        ]);
+        const response = await runWithLock(async () => {
+          // ロック内で日付リセットを確認
+          await checkAndResetDateInternal();
 
-        const maxExtensions = data.maxExtensionsPerDay !== undefined ? data.maxExtensionsPerDay : DEFAULT_MAX_EXTENSIONS;
-        const currentCount = data.todayExtensionCount || 0;
-        const extensionMins = data.extensionMinutes || DEFAULT_EXTENSION_MINUTES;
+          const data = await chrome.storage.local.get([
+            'limitSeconds',
+            'todaySeconds',
+            'extensionMinutes',
+            'maxExtensionsPerDay',
+            'todayExtensionCount',
+            'todayExtendedSeconds'
+          ]);
 
-        // maxExtensions === 0 は延長無効、-1 は無制限
-        if (maxExtensions === 0 || (maxExtensions !== -1 && currentCount >= maxExtensions)) {
-          sendResponse({
-            success: false,
-            reason: 'MAX_REACHED',
-            message: '本日の延長上限に達しているか、延長機能が無効になっています。'
+          const maxExtensions = data.maxExtensionsPerDay !== undefined ? data.maxExtensionsPerDay : DEFAULT_MAX_EXTENSIONS;
+          const currentCount = data.todayExtensionCount || 0;
+          const extensionMins = data.extensionMinutes || DEFAULT_EXTENSION_MINUTES;
+
+          // maxExtensions === 0 は延長無効、-1 は無制限
+          if (maxExtensions === 0 || (maxExtensions !== -1 && currentCount >= maxExtensions)) {
+            return {
+              success: false,
+              reason: 'MAX_REACHED',
+              message: '本日の延長上限に達しているか、延長機能が無効になっています。'
+            };
+          }
+
+          const secondsToAdd = extensionMins * 60;
+          const newExtendedSeconds = (data.todayExtendedSeconds || 0) + secondsToAdd;
+          const newCount = currentCount + 1;
+          const baseLimit = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
+          const effectiveLimit = baseLimit + newExtendedSeconds;
+          const todaySeconds = data.todaySeconds || 0;
+
+          await chrome.storage.local.set({
+            todayExtendedSeconds: newExtendedSeconds,
+            todayExtensionCount: newCount
           });
-          return;
-        }
 
-        const secondsToAdd = extensionMins * 60;
-        const newExtendedSeconds = (data.todayExtendedSeconds || 0) + secondsToAdd;
-        const newCount = currentCount + 1;
-        const baseLimit = data.limitSeconds || DEFAULT_LIMIT_SECONDS;
-        const effectiveLimit = baseLimit + newExtendedSeconds;
-        const todaySeconds = data.todaySeconds || 0;
+          // バッジ更新の失敗で延長処理の整合性を壊さないよう try-catch で保護
+          try {
+            await updateBadge(todaySeconds, effectiveLimit);
+          } catch (badgeErr) {
+            console.warn('Failed to update badge on extension:', badgeErr);
+          }
 
-        await chrome.storage.local.set({
-          todayExtendedSeconds: newExtendedSeconds,
-          todayExtensionCount: newCount
+          return {
+            success: true,
+            todayExtendedSeconds: newExtendedSeconds,
+            todayExtensionCount: newCount,
+            effectiveLimitSeconds: effectiveLimit,
+            todaySeconds: todaySeconds,
+            limitExceeded: todaySeconds >= effectiveLimit,
+            secondsAdded: secondsToAdd,
+            extensionMinutes: extensionMins
+          };
         });
 
-        await updateBadge(todaySeconds, effectiveLimit);
-
-        sendResponse({
-          success: true,
-          todayExtendedSeconds: newExtendedSeconds,
-          todayExtensionCount: newCount,
-          effectiveLimitSeconds: effectiveLimit,
-          secondsAdded: secondsToAdd,
-          extensionMinutes: extensionMins
-        });
+        sendResponse(response);
       } catch (err) {
         sendResponse({ success: false, error: err.message });
       }
@@ -593,6 +673,8 @@ if (typeof module !== 'undefined') {
     isHoliday,
     getHolidays,
     getActiveLimitKey,
-    getActiveLimit
+    getActiveLimit,
+    ALARM_CHECK_DATE,
+    setupDateCheckAlarm
   };
 }

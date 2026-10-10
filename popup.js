@@ -674,6 +674,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // --- タイマー・設定のロード ---
   async function loadStatus() {
+    // バックグラウンドにステータス確認を要求し、日付リセットやタイムアウトを最新化させる
+    if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.sendMessage === 'function') {
+      try {
+        await new Promise((resolve) => {
+          chrome.runtime.sendMessage({ type: 'GET_STATUS' }, () => resolve());
+        });
+      } catch {
+        // バックグラウンド停止中などの場合はそのままストレージから読み込む
+      }
+    }
+
     const keys = [
       'todaySeconds',
       'limitSeconds',
