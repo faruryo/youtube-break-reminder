@@ -57,9 +57,11 @@
       [null, '🎲 ランダム']
     ];
 
-    function pgCard() {
-      if (!document.getElementById('yt-break-reminder-block-overlay')) showBlockOverlay();
-      return document.querySelector('#yt-break-reminder-block-overlay .ybr-card');
+    // content.js のゲームは setTimeout で再描画やクローズを予約するため、切り替えはページの再読み込みで行い、前のゲームの予約を残さない
+    function pgOpen(type) {
+      const params = new URLSearchParams();
+      if (type !== undefined) params.set('type', type || 'random');
+      location.search = params.toString();
     }
 
     function pgToolbar() {
@@ -68,21 +70,28 @@
       for (const [type, label] of PG_TYPES) {
         const btn = document.createElement('button');
         btn.textContent = label;
-        btn.addEventListener('click', () => startRandomChallenge(pgCard(), type));
+        btn.addEventListener('click', () => pgOpen(type));
         bar.appendChild(btn);
       }
       const home = document.createElement('button');
       home.textContent = '↩︎ ブロック画面';
-      home.addEventListener('click', () => renderBlockDefaultUI(pgCard()));
+      home.addEventListener('click', () => pgOpen());
       bar.appendChild(home);
       return bar;
     }
 
+    const pgRequested = new URLSearchParams(location.search).get('type');
+    let pgStarted = false;
     document.body.prepend(pgToolbar());
     // オーバーレイは z-index 最大で全画面を覆うので、出るたびにその中へ操作パネルを差し込む
     new MutationObserver(() => {
       const overlay = document.getElementById('yt-break-reminder-block-overlay');
-      if (overlay && !overlay.querySelector('.pg-toolbar')) overlay.appendChild(pgToolbar());
+      if (!overlay || overlay.querySelector('.pg-toolbar')) return;
+      overlay.appendChild(pgToolbar());
+      if (pgRequested && !pgStarted) {
+        pgStarted = true;
+        startRandomChallenge(overlay.querySelector('.ybr-card'), pgRequested === 'random' ? null : pgRequested);
+      }
     }).observe(document.body, { childList: true });
   </script>
 </body>
