@@ -296,6 +296,14 @@ function collectResetHour(raw) {
   return Math.max(0, Math.min(23, readInt(raw, 4)));
 }
 
+function collectExtensionMinutes(raw) {
+  return Math.max(5, Math.min(180, readInt(raw, 30)));
+}
+
+function collectMaxExtensions(raw) {
+  return readInt(raw, 1);
+}
+
 function collectLimitSeconds(hoursRaw, minutesRaw) {
   const hours = Math.max(0, Math.min(23, readInt(hoursRaw, 0)));
   const minutes = Math.max(0, Math.min(59, readInt(minutesRaw, 0)));
@@ -318,6 +326,12 @@ function fillSettingsInputs(view, data) {
   view.breakIntervalInput.value = Math.floor(breakIntervalSeconds / 60);
   view.resetHourInput.value = data.resetHour !== undefined ? data.resetHour : 4;
   view.debugEnabledInput.checked = !!data.isDebugEnabled;
+  if (view.extensionMinutesInput) {
+    view.extensionMinutesInput.value = data.extensionMinutes !== undefined ? data.extensionMinutes : 30;
+  }
+  if (view.maxExtensionsSelect) {
+    view.maxExtensionsSelect.value = String(data.maxExtensionsPerDay !== undefined ? data.maxExtensionsPerDay : 1);
+  }
 }
 
 function applyStatusView(view, data, fillSettings) {
@@ -325,11 +339,14 @@ function applyStatusView(view, data, fillSettings) {
   const limitSeconds = data.limitSeconds || 90 * 60;
   const breakIntervalSeconds = data.breakIntervalSeconds || 30 * 60;
   const continuousSeconds = data.continuousSeconds || 0;
+  const todayExtendedSeconds = data.todayExtendedSeconds || 0;
+  const todayExtensionCount = data.todayExtensionCount || 0;
+  const effectiveLimit = limitSeconds + todayExtendedSeconds;
 
-  view.setProgress(Math.min(todaySeconds / limitSeconds, 1));
+  view.setProgress(Math.min(todaySeconds / effectiveLimit, 1));
   view.currentText.textContent = formatTimeShort(todaySeconds);
 
-  const remaining = limitSeconds - todaySeconds;
+  const remaining = effectiveLimit - todaySeconds;
   if (remaining <= 0) {
     view.remainingText.textContent = '制限時間に達しました';
     view.remainingText.style.color = 'var(--accent-color)';
@@ -340,6 +357,15 @@ function applyStatusView(view, data, fillSettings) {
 
   const breakRemaining = Math.max(breakIntervalSeconds - continuousSeconds, 0);
   view.continuousText.textContent = `${formatTimeShort(continuousSeconds)} (休憩まで ${formatTimeShort(breakRemaining)})`;
+
+  if (view.extensionStatusItem && view.extensionStatusTime) {
+    if (todayExtensionCount > 0 && todayExtendedSeconds > 0) {
+      view.extensionStatusItem.style.display = 'flex';
+      view.extensionStatusTime.textContent = `${todayExtensionCount}回 (+${Math.round(todayExtendedSeconds / 60)}分)`;
+    } else {
+      view.extensionStatusItem.style.display = 'none';
+    }
+  }
 
   if (fillSettings) fillSettingsInputs(view, data);
 }
@@ -372,8 +398,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   limitInputs['minutes_H'] = document.getElementById('limit-minutes-H');
 
   const breakIntervalInput = document.getElementById('break-interval');
+  const extensionMinutesInput = document.getElementById('extension-minutes');
+  const maxExtensionsSelect = document.getElementById('max-extensions');
   const resetHourInput = document.getElementById('reset-hour');
   const debugEnabledInput = document.getElementById('debug-enabled');
+
+  const extensionStatusItem = document.getElementById('extension-status-item');
+  const extensionStatusTime = document.getElementById('extension-status-time');
   
   const saveBtn = document.getElementById('save-btn');
   const saveStatus = document.getElementById('save-status');
@@ -736,17 +767,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     resetHourInput,
     debugEnabledInput,
     limitInputs,
+    extensionMinutesInput,
+    maxExtensionsSelect,
+    extensionStatusItem,
+    extensionStatusTime,
     setProgress
   };
 
   async function readStatus() {
+    // バックグラウンドにステータス確認を要求し、日付リセットやタイムアウトを最新化させる
+    if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.sendMessage === 'function') {
+      try {
+        await new Promise((resolve) => {
+          chrome.runtime.sendMessage({ type: 'GET_STATUS' }, () => resolve());
+        });
+      } catch {
+        // バックグラウンド停止中などの場合はそのままストレージから読み込む
+      }
+    }
+
     const keys = [
       'todaySeconds',
       'limitSeconds',
       'breakIntervalSeconds',
       'continuousSeconds',
       'resetHour',
-      'isDebugEnabled'
+      'isDebugEnabled',
+      'extensionMinutes',
+      'maxExtensionsPerDay',
+      'todayExtensionCount',
+      'todayExtendedSeconds'
     ];
     for (let i = 0; i <= 6; i++) {
       keys.push(`limitSeconds_${i}`);
@@ -773,6 +823,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   saveBtn.addEventListener('click', async () => {
     const finalBreakMins = collectBreakMinutes(breakIntervalInput.value);
     const finalResetH = collectResetHour(resetHourInput.value);
+    const finalExtMins = collectExtensionMinutes(extensionMinutesInput.value);
+    const finalMaxExt = collectMaxExtensions(maxExtensionsSelect.value);
     const breakIntervalSeconds = finalBreakMins * 60;
 
     const newLimits = {};
@@ -795,6 +847,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       ...newLimits,
       limitSeconds: activeLimitSeconds,
       breakIntervalSeconds,
+      extensionMinutes: finalExtMins,
+      maxExtensionsPerDay: finalMaxExt,
       resetHour: finalResetH,
       isDebugEnabled: debugEnabledInput.checked
     };
@@ -848,6 +902,8 @@ if (typeof module !== 'undefined') {
     aggregateMonthlyHistory,
     collectBreakMinutes,
     collectResetHour,
+    collectExtensionMinutes,
+    collectMaxExtensions,
     collectLimitSeconds,
     applyStatusView
   };

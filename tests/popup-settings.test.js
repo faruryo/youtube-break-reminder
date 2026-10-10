@@ -71,4 +71,32 @@ describe('popup settings', () => {
     expect(view.limitInputs.minutes_1.value).toBe(15);
     expect(view.debugEnabledInput.checked).toBe(false);
   });
+
+  it('counts today\'s extension in the remaining time and keeps typed extension settings on refresh', () => {
+    expect(popup.collectMaxExtensions('0')).toBe(0);
+    expect(popup.collectMaxExtensions('-1')).toBe(-1);
+    expect(popup.collectExtensionMinutes('')).toBe(30);
+
+    const view = {
+      ...viewWithEdits(),
+      extensionMinutesInput: { value: '45' },
+      maxExtensionsSelect: { value: '3' },
+      extensionStatusItem: { style: {} },
+      extensionStatusTime: { textContent: '' }
+    };
+    popup.applyStatusView(view, {
+      todaySeconds: 5400,
+      limitSeconds: 5400,
+      todayExtendedSeconds: 1800,
+      todayExtensionCount: 1,
+      extensionMinutes: 30,
+      maxExtensionsPerDay: 1
+    }, false);
+
+    expect(view.remainingText.textContent).not.toBe('制限時間に達しました');
+    expect(view.extensionStatusItem.style.display).toBe('flex');
+    expect(view.extensionStatusTime.textContent).toBe('1回 (+30分)');
+    expect(view.extensionMinutesInput.value).toBe('45');
+    expect(view.maxExtensionsSelect.value).toBe('3');
+  });
 });

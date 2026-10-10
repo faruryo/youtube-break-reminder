@@ -14,9 +14,23 @@ global.chrome = {
   },
   runtime: {
     onInstalled: { addListener: jest.fn() },
-    onMessage: { addListener: jest.fn() }
+    onMessage: {
+      addListener: jest.fn((handler) => {
+        registeredMessageHandler = handler;
+      })
+    }
+  },
+  alarms: {
+    create: jest.fn(),
+    onAlarm: {
+      addListener: jest.fn((handler) => {
+        registeredAlarmHandler = handler;
+      })
+    }
   }
 };
+
+let registeredAlarmHandler = null;
 
 global.document = {
   addEventListener: jest.fn(),
@@ -24,6 +38,8 @@ global.document = {
   querySelectorAll: jest.fn().mockReturnValue([]),
   getElementById: jest.fn().mockReturnValue({ addEventListener: jest.fn(), classList: { add: jest.fn(), remove: jest.fn() }, style: {} })
 };
+
+let registeredMessageHandler = null;
 
 const background = require('../background');
 const popup = require('../popup');
@@ -440,4 +456,246 @@ describe('YouTube Break Reminder - background.js Tests', () => {
       expect(monthly.hourly[8]).toBe(6000);
     });
   });
+
+  describe('checkAndResetDate() - Extension Reset Logic', () => {
+    it('should reset todayExtendedSeconds and todayExtensionCount when date changes', async () => {
+      // 2026-07-06 10:00:00 JST (Monday)
+      jest.setSystemTime(new Date('2026-07-06T10:00:00+09:00'));
+
+      chrome.storage.local.get.mockResolvedValue({
+        lastActiveDate: '2026-07-05',
+        resetHour: 4,
+        limitSeconds_1: 5400
+      });
+
+      const resetOccurred = await background.checkAndResetDate();
+
+      expect(resetOccurred).toBe(true);
+      expect(chrome.storage.local.set).toHaveBeenCalledWith({
+        todaySeconds: 0,
+        continuousSeconds: 0,
+        todayExtensionCount: 0,
+        todayExtendedSeconds: 0,
+        lastActiveDate: '2026-07-06',
+        limitSeconds: 5400
+      });
+      expect(chrome.action.setBadgeText).toHaveBeenCalled();
+    });
+
+    it('should NOT reset if business date is unchanged', async () => {
+      jest.setSystemTime(new Date('2026-07-06T10:00:00+09:00'));
+
+      chrome.storage.local.get.mockResolvedValue({
+        lastActiveDate: '2026-07-06',
+        resetHour: 4
+      });
+
+      const resetOccurred = await background.checkAndResetDate();
+
+      expect(resetOccurred).toBe(false);
+      expect(chrome.storage.local.set).not.toHaveBeenCalled();
+    });
+
+    it.each(['HEARTBEAT', 'GET_STATUS'])('should reset date inside %s without deadlocking the lock', async (type) => {
+      jest.setSystemTime(new Date('2026-07-06T10:00:00+09:00'));
+
+      chrome.storage.local.get.mockResolvedValue({
+        lastActiveDate: '2026-07-05',
+        resetHour: 4,
+        limitSeconds_1: 5400
+      });
+
+      const sendResponse = jest.fn();
+      registeredMessageHandler({ type }, {}, sendResponse);
+      await flushPromises();
+
+      expect(chrome.storage.local.set).toHaveBeenCalledWith(expect.objectContaining({
+        todaySeconds: 0,
+        lastActiveDate: '2026-07-06'
+      }));
+      expect(sendResponse).toHaveBeenCalled();
+    });
+  });
+
+  describe('EXTEND_TIME Message Handler', () => {
+    let messageHandler;
+
+    beforeEach(() => {
+      messageHandler = registeredMessageHandler;
+    });
+
+    it('should successfully extend time when extension limit is not reached', async () => {
+      jest.setSystemTime(new Date('2026-07-06T10:00:00+09:00'));
+
+      chrome.storage.local.get.mockImplementation((keys) => {
+        if (keys.includes && keys.includes('lastActiveDate')) {
+          return Promise.resolve({ lastActiveDate: '2026-07-06', resetHour: 4 });
+        }
+        return Promise.resolve({
+          limitSeconds: 5400, // 90m
+          todaySeconds: 5400,
+          extensionMinutes: 30,
+          maxExtensionsPerDay: 1,
+          todayExtensionCount: 0,
+          todayExtendedSeconds: 0
+        });
+      });
+
+      const sendResponse = jest.fn();
+      messageHandler({ type: 'EXTEND_TIME' }, {}, sendResponse);
+
+      // 非同期完了を待つ
+      await flushPromises();
+
+      expect(chrome.storage.local.set).toHaveBeenCalledWith({
+        todayExtendedSeconds: 1800,
+        todayExtensionCount: 1
+      });
+      expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({
+        success: true,
+        todayExtendedSeconds: 1800,
+        todayExtensionCount: 1,
+        effectiveLimitSeconds: 7200,
+        secondsAdded: 1800,
+        extensionMinutes: 30
+      }));
+    });
+
+    it('should reject extension when max extensions limit is reached', async () => {
+      jest.setSystemTime(new Date('2026-07-06T10:00:00+09:00'));
+
+      chrome.storage.local.get.mockImplementation((keys) => {
+        if (keys.includes && keys.includes('lastActiveDate')) {
+          return Promise.resolve({ lastActiveDate: '2026-07-06', resetHour: 4 });
+        }
+        return Promise.resolve({
+          limitSeconds: 5400,
+          todaySeconds: 7200,
+          extensionMinutes: 30,
+          maxExtensionsPerDay: 1,
+          todayExtensionCount: 1,
+          todayExtendedSeconds: 1800
+        });
+      });
+
+      const sendResponse = jest.fn();
+      messageHandler({ type: 'EXTEND_TIME' }, {}, sendResponse);
+
+      await flushPromises();
+
+      expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({
+        success: false,
+        reason: 'MAX_REACHED'
+      }));
+    });
+
+    it('should allow multiple extensions when maxExtensionsPerDay is -1 (unlimited)', async () => {
+      jest.setSystemTime(new Date('2026-07-06T10:00:00+09:00'));
+
+      chrome.storage.local.get.mockImplementation((keys) => {
+        if (keys.includes && keys.includes('lastActiveDate')) {
+          return Promise.resolve({ lastActiveDate: '2026-07-06', resetHour: 4 });
+        }
+        return Promise.resolve({
+          limitSeconds: 5400,
+          todaySeconds: 9000,
+          extensionMinutes: 30,
+          maxExtensionsPerDay: -1, // Unlimited
+          todayExtensionCount: 2,
+          todayExtendedSeconds: 3600
+        });
+      });
+
+      const sendResponse = jest.fn();
+      messageHandler({ type: 'EXTEND_TIME' }, {}, sendResponse);
+
+      await flushPromises();
+
+      expect(chrome.storage.local.set).toHaveBeenCalledWith({
+        todayExtendedSeconds: 5400,
+        todayExtensionCount: 3
+      });
+      expect(sendResponse).toHaveBeenCalledWith(expect.objectContaining({
+        success: true,
+        todayExtendedSeconds: 5400,
+        todayExtensionCount: 3
+      }));
+    });
+
+    it('should serialize concurrent EXTEND_TIME requests to prevent race conditions', async () => {
+      jest.setSystemTime(new Date('2026-07-06T10:00:00+09:00'));
+
+      let storedState = {
+        lastActiveDate: '2026-07-06',
+        resetHour: 4,
+        limitSeconds: 5400,
+        todaySeconds: 5400,
+        extensionMinutes: 30,
+        maxExtensionsPerDay: 2,
+        todayExtensionCount: 0,
+        todayExtendedSeconds: 0
+      };
+
+      chrome.storage.local.get.mockImplementation(async () => {
+        await Promise.resolve();
+        return { ...storedState };
+      });
+
+      chrome.storage.local.set.mockImplementation(async (updates) => {
+        await Promise.resolve();
+        Object.assign(storedState, updates);
+      });
+
+      const sendResponse1 = jest.fn();
+      const sendResponse2 = jest.fn();
+
+      // 2つのリクエストを同時に発火
+      messageHandler({ type: 'EXTEND_TIME' }, {}, sendResponse1);
+      messageHandler({ type: 'EXTEND_TIME' }, {}, sendResponse2);
+
+      await flushPromises();
+
+      // 1つ目の要求が成功
+      expect(sendResponse1).toHaveBeenCalledWith(expect.objectContaining({
+        success: true,
+        todayExtensionCount: 1,
+        todayExtendedSeconds: 1800
+      }));
+
+      // 2つ目の要求も直列化されて最新値に基づいて処理され、2回目として成功
+      expect(sendResponse2).toHaveBeenCalledWith(expect.objectContaining({
+        success: true,
+        todayExtensionCount: 2,
+        todayExtendedSeconds: 3600
+      }));
+
+      // 最終的に両方の延長がアトミックに保存されたことを確認
+      expect(storedState.todayExtensionCount).toBe(2);
+      expect(storedState.todayExtendedSeconds).toBe(3600);
+    });
+
+    it('should trigger checkAndResetDate when checkDateAlarm fires', async () => {
+      jest.setSystemTime(new Date('2026-07-07T05:00:00+09:00'));
+      chrome.storage.local.get.mockResolvedValue({
+        lastActiveDate: '2026-07-06',
+        resetHour: 4
+      });
+
+      expect(registeredAlarmHandler).not.toBeNull();
+      await registeredAlarmHandler({ name: background.ALARM_CHECK_DATE });
+
+      expect(chrome.storage.local.set).toHaveBeenCalledWith(expect.objectContaining({
+        todaySeconds: 0,
+        todayExtensionCount: 0,
+        todayExtendedSeconds: 0,
+        lastActiveDate: '2026-07-07'
+      }));
+    });
+  });
 });
+
+async function flushPromises() {
+  for (let i = 0; i < 30; i++) {
+    await Promise.resolve();
+  }
+}
