@@ -11,6 +11,7 @@ let heartbeatIntervalId = null;
 let isBlocked = false;
 let isBreakShowing = false;
 let isDebugEnabled = false;
+let isLivePriorityEnabled = true;
 
 let shouldResumeVideo = false;
 let pausedVideosToResume = [];
@@ -50,8 +51,9 @@ async function init() {
   }
   
   // ストレージからデバッグモード設定を取得
-  const data = await chrome.storage.local.get(['isDebugEnabled']);
+  const data = await chrome.storage.local.get(['isDebugEnabled', 'isLivePriorityEnabled']);
   isDebugEnabled = !!data.isDebugEnabled;
+  isLivePriorityEnabled = data.isLivePriorityEnabled !== false;
 
   // 初期状態で既に制限時間を超えているか確認
   if (todaySeconds >= limitSeconds + todayExtendedSeconds) {
@@ -110,6 +112,9 @@ async function init() {
         const recentInteraction = (Date.now() - lastInteractionTime) < 60000;
         const isActive = isVisible && (playing || recentInteraction);
         updateDebugPanel(isVisible, playing, recentInteraction, isActive);
+      }
+      if (changes.isLivePriorityEnabled) {
+        isLivePriorityEnabled = changes.isLivePriorityEnabled.newValue !== false;
       }
     }
   });
@@ -190,6 +195,8 @@ function startHeartbeat() {
   if (heartbeatIntervalId) clearInterval(heartbeatIntervalId);
   
   heartbeatIntervalId = setInterval(async () => {
+    syncOverlayWithLive();
+
     // アクティブ判定の拡張:
     // 1. タブが表示されている (visibilityState === 'visible')
     // 2. かつ、以下のいずれかを満たしている：
@@ -204,7 +211,9 @@ function startHeartbeat() {
     // デバッグ表示の更新
     updateDebugPanel(isVisible, playing, recentInteraction, isActive);
     
-    if (isActive && !isBlocked && !isBreakShowing) {
+    // ライブの休憩通知は再生を止めないので、表示中も1日の視聴時間を数える（連続視聴時間は × で閉じた時にリセットされる）
+    const isLiveBreakNotice = isBreakShowing && !document.getElementById('yt-break-reminder-break-overlay');
+    if (isActive && !isBlocked && (!isBreakShowing || isLiveBreakNotice)) {
       continuousSeconds++;
       
       // バックグラウンドに時間計測を通知
@@ -235,8 +244,88 @@ function startHeartbeat() {
   }, 1000);
 }
 
+// ライブ優先モードで配信中のライブを見ているか（アーカイブはライブ表示が付かないため対象外）
+function isKeepPlayingLive() {
+  // 動画ページを離れても隠れたプレイヤーにライブの印が残り得るので、/watch のときだけライブとみなす
+  return isLivePriorityEnabled && !!window.location && window.location.pathname === '/watch'
+    && !!document.querySelector('.ytp-time-display.ytp-live');
+}
+
+// ライブの表示は再生が始まるまで付かない。判定前に全画面で止めるとライブでも再生が始まらなくなるため、表示を待つ
+function isLiveUndecided() {
+  if (!isLivePriorityEnabled || !window.location || window.location.pathname !== '/watch') return false;
+  const player = document.querySelector('#movie_player');
+  return !player || player.classList.contains('unstarted-mode') || player.classList.contains('ad-showing');
+}
+
+const LIVE_NOTICE_ID = 'yt-break-reminder-live-notice';
+const LIVE_NOTICE_SPEAK_INTERVAL_MS = 30000;
+let liveNoticeSpeakIntervalId = null;
+
+function speak(message) {
+  if (typeof speechSynthesis === 'undefined') return;
+  speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(message);
+  utterance.lang = 'ja-JP';
+  speechSynthesis.speak(utterance);
+}
+
+function showLiveNotice(onClose, message) {
+  removeLiveNotice();
+  const notice = document.createElement('div');
+  notice.id = LIVE_NOTICE_ID;
+  const icon = document.createElement('img');
+  icon.src = chrome.runtime.getURL('icons/icon-48.png');
+  icon.alt = 'YouTube Break Reminder';
+  const text = document.createElement('span');
+  text.textContent = message;
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '×';
+  closeBtn.ariaLabel = '通知を閉じる';
+  closeBtn.addEventListener('click', () => onClose());
+  notice.appendChild(icon);
+  notice.appendChild(text);
+  notice.appendChild(closeBtn);
+  document.body.appendChild(notice);
+
+  speak(message);
+  liveNoticeSpeakIntervalId = setInterval(() => speak(message), LIVE_NOTICE_SPEAK_INTERVAL_MS);
+}
+
+function removeLiveNotice() {
+  if (liveNoticeSpeakIntervalId) {
+    clearInterval(liveNoticeSpeakIntervalId);
+    liveNoticeSpeakIntervalId = null;
+    if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+  }
+  const notice = document.getElementById(LIVE_NOTICE_ID);
+  if (notice) notice.remove();
+}
+
+// ライブかどうかはプレイヤーの読み込みや YouTube 内の画面遷移で後から変わるため、表示中の形（全画面/通知）を合わせ直す
+function syncOverlayWithLive() {
+  if (isLiveUndecided()) return;
+  const live = isKeepPlayingLive();
+  const hasNotice = !!document.getElementById(LIVE_NOTICE_ID);
+  const hasFullBlock = !!document.getElementById('yt-break-reminder-block-overlay');
+  if (isBlocked && live && hasFullBlock) {
+    removeBlockOverlay();
+    // 全画面の間に再生しようとしたライブは preventPlayListener が止めていて追跡対象にないため、メイン動画も再開させる
+    resumeVideos(true);
+    showBlockOverlay();
+  } else if (isBlocked && !live && !hasFullBlock) {
+    removeBlockOverlay();
+    showBlockOverlay();
+  } else if (isBreakShowing && !live && hasNotice) {
+    removeLiveNotice();
+    isBreakShowing = false;
+    showBreakOverlay();
+  }
+}
+
 // 動画の一時停止
 function pauseAllVideos() {
+  if (isKeepPlayingLive()) return [];
   const videos = document.querySelectorAll('video');
   const paused = [];
   videos.forEach(video => {
@@ -873,9 +962,15 @@ function startRandomChallenge(card, forceType = null) {
 
 // デイリー制限オーバーレイの表示
 function showBlockOverlay() {
-  if (isBlocked) return;
+  if (isBlocked || isLiveUndecided()) return;
   isBlocked = true;
-  
+
+  if (isKeepPlayingLive()) {
+    removeBreakOverlay();
+    showLiveNotice(removeLiveNotice, '今日の視聴上限に達しました');
+    return;
+  }
+
   // 入力欄等にフォーカスが残っていれば外す
   if (document.activeElement && typeof document.activeElement.blur === 'function') {
     document.activeElement.blur();
@@ -929,6 +1024,7 @@ function removeBlockOverlay() {
   }
   const overlay = document.getElementById('yt-break-reminder-block-overlay');
   if (overlay) overlay.remove();
+  removeLiveNotice();
   isBlocked = false;
 
   // 計測が開始されていない場合は開始
@@ -1006,8 +1102,13 @@ function resumeFromBreak() {
 
 // 休憩促進オーバーレイの表示
 function showBreakOverlay() {
-  if (isBreakShowing) return;
+  if (isBreakShowing || isLiveUndecided()) return;
   isBreakShowing = true;
+
+  if (isKeepPlayingLive()) {
+    showLiveNotice(removeBreakOverlay, '少し休憩しましょう');
+    return;
+  }
 
   // 休憩開始時に再生中だった動画要素を保持して一時停止
   pausedVideosToResume = pauseAllVideos();
@@ -1096,6 +1197,7 @@ function removeBreakOverlay() {
 
   const overlay = document.getElementById('yt-break-reminder-break-overlay');
   if (overlay) overlay.remove();
+  removeLiveNotice();
   continuousSeconds = 0;
   isBreakShowing = false;
 
@@ -1119,7 +1221,9 @@ function preventVideoPlayback() {
   if (preventPlayListener) return;
   
   preventPlayListener = (e) => {
-    if (isBlocked || isBreakShowing) {
+    // 一度登録すると外さないため、ライブ通知の間（全画面がない間）は止めない。広告中や画面遷移の直後はライブの印が消えるので印だけでは判定できない
+    const hasFullOverlay = !!(document.getElementById('yt-break-reminder-block-overlay') || document.getElementById('yt-break-reminder-break-overlay'));
+    if ((isBlocked || isBreakShowing) && hasFullOverlay && !isKeepPlayingLive()) {
       const video = e.target;
       video.pause();
     }
@@ -1138,7 +1242,9 @@ function observeOverlayRemoval(elementId) {
     for (const mutation of mutationsList) {
       if (mutation.type === 'childList') {
         const removed = Array.from(mutation.removedNodes).some(node => node.id === elementId);
-        if (removed && (isBlocked || (elementId === 'yt-break-reminder-break-overlay' && isBreakShowing))) {
+        // ライブ通知へ切り替えるために外した場合は作り直さない
+        const switchedToLiveNotice = !!document.getElementById(LIVE_NOTICE_ID);
+        if (removed && !switchedToLiveNotice && (isBlocked || (elementId === 'yt-break-reminder-break-overlay' && isBreakShowing))) {
           // 要素が消されたら再作成
           if (elementId === 'yt-break-reminder-block-overlay') {
             isBlocked = false;
