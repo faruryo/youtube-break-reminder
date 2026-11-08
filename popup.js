@@ -326,6 +326,7 @@ function fillSettingsInputs(view, data) {
   view.breakIntervalInput.value = Math.floor(breakIntervalSeconds / 60);
   view.resetHourInput.value = data.resetHour !== undefined ? data.resetHour : 4;
   view.debugEnabledInput.checked = !!data.isDebugEnabled;
+  if (view.livePriorityInput) view.livePriorityInput.checked = data.isLivePriorityEnabled !== false;
   if (view.extensionMinutesInput) {
     view.extensionMinutesInput.value = data.extensionMinutes !== undefined ? data.extensionMinutes : 30;
   }
@@ -402,6 +403,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const maxExtensionsSelect = document.getElementById('max-extensions');
   const resetHourInput = document.getElementById('reset-hour');
   const debugEnabledInput = document.getElementById('debug-enabled');
+  const livePriorityInput = document.getElementById('live-priority-enabled');
 
   const extensionStatusItem = document.getElementById('extension-status-item');
   const extensionStatusTime = document.getElementById('extension-status-time');
@@ -766,6 +768,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     breakIntervalInput,
     resetHourInput,
     debugEnabledInput,
+    livePriorityInput,
     limitInputs,
     extensionMinutesInput,
     maxExtensionsSelect,
@@ -793,6 +796,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       'continuousSeconds',
       'resetHour',
       'isDebugEnabled',
+      'isLivePriorityEnabled',
       'extensionMinutes',
       'maxExtensionsPerDay',
       'todayExtensionCount',
@@ -850,7 +854,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       extensionMinutes: finalExtMins,
       maxExtensionsPerDay: finalMaxExt,
       resetHour: finalResetH,
-      isDebugEnabled: debugEnabledInput.checked
+      isDebugEnabled: debugEnabledInput.checked,
+      isLivePriorityEnabled: livePriorityInput.checked
     };
 
     await chrome.storage.local.set(saveObj);
@@ -873,6 +878,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   debugEnabledInput.addEventListener('change', async () => {
     await chrome.storage.local.set({
       isDebugEnabled: debugEnabledInput.checked
+    });
+  });
+
+  livePriorityInput.addEventListener('change', async () => {
+    await chrome.storage.local.set({
+      isLivePriorityEnabled: livePriorityInput.checked
     });
   });
 

@@ -15,6 +15,7 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
     global.chrome = {
       runtime: {
         sendMessage: jest.fn(),
+        getURL: jest.fn((path) => `chrome-extension://test/${path}`),
         lastError: null
       },
       storage: {
@@ -568,6 +569,14 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
       expect(pausedList).toEqual([video2, video3]);
     });
 
+    it('should not pause anything while a live stream is playing (live priority mode is on by default)', () => {
+      const video = { paused: false, pause: jest.fn() };
+      global.document.querySelectorAll = jest.fn((sel) => (sel === 'video' ? [video] : []));
+      global.document.querySelector = jest.fn((sel) => (sel === '.ytp-time-display.ytp-live' ? {} : null));
+
+      expect(content.pauseAllVideos()).toEqual([]);
+      expect(video.pause).not.toHaveBeenCalled();
+    });
     it('should resume only the videos that were actually playing and paused when break began', () => {
       const video1 = { paused: true, pause: jest.fn(), play: jest.fn().mockResolvedValue(undefined) };
       const video2 = { paused: false, pause: jest.fn(() => { video2.paused = true; }), play: jest.fn().mockResolvedValue(undefined) };
@@ -653,6 +662,88 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
     it('should trigger play on video.html5-main-video if present and no tracked elements', () => {
       content.resumeVideos();
       expect(mockPlay).toHaveBeenCalled();
+    });
+  });
+
+  describe('live notice (live priority mode)', () => {
+    let video;
+    beforeEach(() => {
+      video = { paused: false, pause: jest.fn() };
+      global.document.querySelectorAll = jest.fn((sel) => (sel === 'video' ? [video] : []));
+      global.document.querySelector = jest.fn((sel) => (sel === '.ytp-time-display.ytp-live' ? {} : null));
+      global.speechSynthesis = { speak: jest.fn(), cancel: jest.fn() };
+      global.SpeechSynthesisUtterance = jest.fn(function (text) { this.text = text; });
+    });
+    afterEach(() => {
+      delete global.speechSynthesis;
+      delete global.SpeechSynthesisUtterance;
+    });
+
+    const clickClose = () => {
+      const notice = elementsMap.get('yt-break-reminder-live-notice');
+      const closeBtn = notice.appendChild.mock.calls[2][0];
+      closeBtn.addEventListener.mock.calls[0][1]();
+    };
+
+    it('break: shows a corner notice instead of the overlay, repeats speech until closed', () => {
+      content.showBreakOverlay();
+
+      expect(elementsMap.has('yt-break-reminder-break-overlay')).toBe(false);
+      expect(elementsMap.has('yt-break-reminder-live-notice')).toBe(true);
+      expect(video.pause).not.toHaveBeenCalled();
+      expect(speechSynthesis.speak).toHaveBeenCalledTimes(1);
+
+      jest.advanceTimersByTime(30000);
+      expect(speechSynthesis.speak).toHaveBeenCalledTimes(2);
+
+      clickClose();
+      expect(elementsMap.has('yt-break-reminder-live-notice')).toBe(false);
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'RESET_CONTINUOUS' });
+      jest.advanceTimersByTime(60000);
+      expect(speechSynthesis.speak).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps counting daily watch time while the live break notice is shown', async () => {
+      chrome.runtime.sendMessage.mockImplementation((msg, cb) => {
+        if (msg.type === 'GET_STATUS' && cb) {
+          cb({ todaySeconds: 0, limitSeconds: 5400, breakIntervalSeconds: 1800, todayExtendedSeconds: 0, todayExtensionCount: 0, maxExtensionsPerDay: 1, extensionMinutes: 30 });
+        }
+      });
+      document.visibilityState = 'visible';
+      await content.init();
+      content.showBreakOverlay();
+      chrome.runtime.sendMessage.mockClear();
+
+      jest.advanceTimersByTime(1000);
+
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'HEARTBEAT' }, expect.any(Function));
+    });
+
+    it('waits while the player has not started yet, since live status is unknown until playback begins', () => {
+      const player = { classList: { contains: (c) => c === 'unstarted-mode' } };
+      global.document.querySelector = jest.fn((sel) => (sel === '#movie_player' ? player : null));
+
+      content.showBreakOverlay();
+      content.showBlockOverlay();
+
+      expect(elementsMap.has('yt-break-reminder-break-overlay')).toBe(false);
+      expect(elementsMap.has('yt-break-reminder-block-overlay')).toBe(false);
+      expect(elementsMap.has('yt-break-reminder-live-notice')).toBe(false);
+      expect(video.pause).not.toHaveBeenCalled();
+    });
+
+    it('block: shows a corner notice instead of the overlay and stays blocked after closing', () => {
+      content.showBlockOverlay();
+
+      expect(elementsMap.has('yt-break-reminder-block-overlay')).toBe(false);
+      expect(elementsMap.has('yt-break-reminder-live-notice')).toBe(true);
+      expect(video.pause).not.toHaveBeenCalled();
+
+      clickClose();
+      expect(elementsMap.has('yt-break-reminder-live-notice')).toBe(false);
+      // まだブロック中なので同じページでは再表示しない
+      content.showBlockOverlay();
+      expect(elementsMap.has('yt-break-reminder-live-notice')).toBe(false);
     });
   });
 
@@ -782,7 +873,7 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
       };
 
       const mockVideo = { paused: true, play: jest.fn().mockResolvedValue() };
-      document.querySelector = jest.fn().mockReturnValue(mockVideo);
+      document.querySelector = jest.fn((sel) => (sel.startsWith('video') ? mockVideo : null));
 
       content.showBlockOverlay();
       expect(document.getElementById('yt-break-reminder-block-overlay')).not.toBeNull();
@@ -860,7 +951,7 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
       };
 
       document.querySelectorAll = jest.fn().mockReturnValue([disconnectedVideo]);
-      document.querySelector = jest.fn().mockReturnValue(otherPausedVideo);
+      document.querySelector = jest.fn((sel) => (sel.startsWith('video') ? otherPausedVideo : null));
       document.contains = jest.fn((el) => el !== disconnectedVideo);
 
       content.showBlockOverlay();
@@ -913,7 +1004,7 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
       };
 
       const mockVideo = { paused: true, play: jest.fn().mockResolvedValue() };
-      document.querySelector = jest.fn().mockReturnValue(mockVideo);
+      document.querySelector = jest.fn((sel) => (sel.startsWith('video') ? mockVideo : null));
 
       content.showBlockOverlay();
       expect(document.getElementById('yt-break-reminder-block-overlay')).not.toBeNull();
@@ -978,7 +1069,7 @@ describe('YouTube Break Reminder - content.js Space / Enter Key & Auto-Resume Te
       };
 
       const mockVideo = { paused: true, play: jest.fn().mockResolvedValue() };
-      document.querySelector = jest.fn().mockReturnValue(mockVideo);
+      document.querySelector = jest.fn((sel) => (sel.startsWith('video') ? mockVideo : null));
 
       content.showBlockOverlay();
       expect(document.getElementById('yt-break-reminder-block-overlay')).not.toBeNull();
