@@ -212,7 +212,7 @@ function startHeartbeat() {
     updateDebugPanel(isVisible, playing, recentInteraction, isActive);
     
     // ライブの休憩通知は再生を止めないので、表示中も1日の視聴時間を数える（連続視聴時間は × で閉じた時にリセットされる）
-    const isLiveBreakNotice = isBreakShowing && !!document.getElementById(LIVE_NOTICE_ID);
+    const isLiveBreakNotice = isBreakShowing && !document.getElementById('yt-break-reminder-break-overlay');
     if (isActive && !isBlocked && (!isBreakShowing || isLiveBreakNotice)) {
       continuousSeconds++;
       
@@ -246,14 +246,16 @@ function startHeartbeat() {
 
 // ライブ優先モードで配信中のライブを見ているか（アーカイブはライブ表示が付かないため対象外）
 function isKeepPlayingLive() {
-  return isLivePriorityEnabled && !!document.querySelector('.ytp-time-display.ytp-live');
+  // 動画ページを離れても隠れたプレイヤーにライブの印が残り得るので、/watch のときだけライブとみなす
+  return isLivePriorityEnabled && !!window.location && window.location.pathname === '/watch'
+    && !!document.querySelector('.ytp-time-display.ytp-live');
 }
 
 // ライブの表示は再生が始まるまで付かない。判定前に全画面で止めるとライブでも再生が始まらなくなるため、表示を待つ
 function isLiveUndecided() {
   if (!isLivePriorityEnabled || !window.location || window.location.pathname !== '/watch') return false;
   const player = document.querySelector('#movie_player');
-  return !!player && (player.classList.contains('unstarted-mode') || player.classList.contains('ad-showing'));
+  return !player || player.classList.contains('unstarted-mode') || player.classList.contains('ad-showing');
 }
 
 const LIVE_NOTICE_ID = 'yt-break-reminder-live-notice';
@@ -302,12 +304,14 @@ function removeLiveNotice() {
 
 // ライブかどうかはプレイヤーの読み込みや YouTube 内の画面遷移で後から変わるため、表示中の形（全画面/通知）を合わせ直す
 function syncOverlayWithLive() {
+  if (isLiveUndecided()) return;
   const live = isKeepPlayingLive();
   const hasNotice = !!document.getElementById(LIVE_NOTICE_ID);
   const hasFullBlock = !!document.getElementById('yt-break-reminder-block-overlay');
   if (isBlocked && live && hasFullBlock) {
     removeBlockOverlay();
-    resumeVideos(false);
+    // 全画面の間に再生しようとしたライブは preventPlayListener が止めていて追跡対象にないため、メイン動画も再開させる
+    resumeVideos(true);
     showBlockOverlay();
   } else if (isBlocked && !live && !hasFullBlock) {
     removeBlockOverlay();
@@ -1217,7 +1221,9 @@ function preventVideoPlayback() {
   if (preventPlayListener) return;
   
   preventPlayListener = (e) => {
-    if ((isBlocked || isBreakShowing) && !isKeepPlayingLive()) {
+    // 一度登録すると外さないため、ライブ通知の間（全画面がない間）は止めない。広告中や画面遷移の直後はライブの印が消えるので印だけでは判定できない
+    const hasFullOverlay = !!(document.getElementById('yt-break-reminder-block-overlay') || document.getElementById('yt-break-reminder-break-overlay'));
+    if ((isBlocked || isBreakShowing) && hasFullOverlay && !isKeepPlayingLive()) {
       const video = e.target;
       video.pause();
     }
